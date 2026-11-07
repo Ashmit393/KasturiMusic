@@ -12,6 +12,11 @@ object SettingsManager {
         }
     }
 
+    /** 0 = Light, 1 = Dark, 2 = AMOLED black (default) */
+    var theme: Int
+        get() = p.getInt("theme", 2)
+        set(v) { p.edit().putInt("theme", v).apply() }
+
     var sort: Int
         get() = p.getInt("sort", 0)
         set(v) { p.edit().putInt("sort", v).apply() }

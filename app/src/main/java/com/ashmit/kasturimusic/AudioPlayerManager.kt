@@ -44,6 +44,9 @@ object AudioPlayerManager {
         app = ctx.applicationContext
         SettingsManager.init(app)
         MusicRepository.init(app)
+        MetadataManager.init(app)
+        PlaylistManager.init(app)
+        EqualizerManager.init(app)
         shuffle = SettingsManager.shuffle
         repeat = SettingsManager.repeat
     }
@@ -97,6 +100,13 @@ object AudioPlayerManager {
         } catch (e: Exception) {
             // background se start allowed nahi: ignore
         }
+    }
+
+    /** Metadata badalne ya rescan ke baad queue ke gaanon ko naye naam de deta hai. */
+    fun updateSongs(map: Map<Long, Song>) {
+        queue = queue.map { map[it.id] ?: it }
+        originalQueue = originalQueue.map { map[it.id] ?: it }
+        notifyChanged()
     }
 
     // ---------- queue ----------
@@ -179,6 +189,7 @@ object AudioPlayerManager {
         val mp = MediaPlayer()
         player = mp
         prepared = false
+        EqualizerManager.attach(mp.audioSessionId)
         try {
             mp.setAudioAttributes(attrs())
             mp.setWakeMode(app, PowerManager.PARTIAL_WAKE_LOCK)
@@ -300,6 +311,7 @@ object AudioPlayerManager {
     }
 
     private fun releasePlayer() {
+        EqualizerManager.release()
         val mp = player
         player = null
         prepared = false
