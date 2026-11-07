@@ -102,6 +102,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         AudioPlayerManager.init(this)
+        volumeControlStream = android.media.AudioManager.STREAM_MUSIC
         buildUi()
         if (hasAudio()) {
             scan()
@@ -474,7 +475,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             v = packageManager.getPackageInfo(packageName, 0).versionName ?: v
         } catch (e: Exception) { }
         dialog().setTitle("KASTURI MUSIC PLAYER")
-            .setMessage("Version $v\n\nMade with \u2665 by Ashmit Singh\n\nOffline. No ads. No tracking.")
+            .setMessage("Version $v\n\nMade with \u2665 by Ashmit Singh\n\nSongs play offline.\nInternet is used only to find lyrics.\nNo ads. No tracking.")
             .setPositiveButton("OK", null)
             .show()
     }

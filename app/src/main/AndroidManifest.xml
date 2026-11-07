@@ -10,6 +10,8 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Screen off hone par bhi gaana na ruke -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Sirf online lyrics dhoondhne ke liye (LRCLIB). Gaane offline chalte hain. -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="false"
