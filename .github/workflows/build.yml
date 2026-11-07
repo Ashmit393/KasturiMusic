@@ -3,6 +3,8 @@ on:
   push:
     branches: [main, master]
   workflow_dispatch: {}
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -15,9 +17,25 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: 8.9
-      - name: Build debug APK
-        run: gradle assembleDebug --no-daemon
+      - name: Decode signing key
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+        run: echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/kasturi-release.jks"
+      - name: Build signed release APK
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/kasturi-release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: gradle assembleRelease --no-daemon
+      - name: Rename APK
+        run: cp app/build/outputs/apk/release/app-release.apk KasturiMusic.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: kasturi-music-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          name: kasturi-music-release-apk
+          path: KasturiMusic.apk
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VER=$(grep -oP 'versionName = "\K[^"]+' app/build.gradle.kts)
+          gh release delete "v$VER" --cleanup-tag -y || true
+          gh release create "v$VER" KasturiMusic.apk --title "KASTURI MUSIC PLAYER v$VER" --notes "Made with love by Ashmit Singh" --latest
