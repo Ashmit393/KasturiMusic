@@ -40,6 +40,30 @@ object ArtworkLoader {
         }
     }
 
+    /** Bahut chhota (16px) halving se dhundhla bitmap: sasta "blur", RAM/GPU nahi khata. */
+    fun loadBlur(ctx: Context, song: Song, cb: (Bitmap?) -> Unit) {
+        val k = "b" + key(song, 16)
+        val hit = cache.get(k)
+        if (hit != null) { cb(hit); return }
+        if (failed.contains(k)) { cb(null); return }
+        val app = ctx.applicationContext
+        pool.execute {
+            var out: Bitmap? = null
+            try {
+                val src = decode(app, song, 96)
+                if (src != null) {
+                    var b: Bitmap = src
+                    while (b.width > 16) {
+                        b = Bitmap.createScaledBitmap(b, maxOf(16, b.width / 2), maxOf(16, b.height / 2), true)
+                    }
+                    out = b
+                }
+            } catch (e: Exception) { }
+            if (out != null) cache.put(k, out) else failed.add(k)
+            main.post { cb(out) }
+        }
+    }
+
     private fun decode(ctx: Context, song: Song, px: Int): Bitmap? {
         if (Build.VERSION.SDK_INT >= 29) {
             try {

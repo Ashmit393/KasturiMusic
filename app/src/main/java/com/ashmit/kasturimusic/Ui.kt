@@ -3,9 +3,16 @@ package com.ashmit.kasturimusic
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Outline
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.graphics.drawable.TransitionDrawable
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewOutlineProvider
+import android.view.animation.DecelerateInterpolator
+import android.view.animation.OvershootInterpolator
 import android.widget.ImageButton
 import android.widget.ImageView
 
@@ -66,6 +73,47 @@ object Ui {
                 iv.clearColorFilter()
                 iv.scaleType = ImageView.ScaleType.CENTER_CROP
                 iv.setImageBitmap(bmp)
+            }
+        }
+    }
+
+    /** Dabane par halka sa dab jaata hai aur chhodne par bounce karta hai. Click ko nahi rokta. */
+    fun pressable(v: View) {
+        v.setOnTouchListener { view, e ->
+            when (e.action) {
+                MotionEvent.ACTION_DOWN ->
+                    view.animate().scaleX(0.9f).scaleY(0.9f).setDuration(90)
+                        .setInterpolator(DecelerateInterpolator()).start()
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL ->
+                    view.animate().scaleX(1f).scaleY(1f).setDuration(220)
+                        .setInterpolator(OvershootInterpolator(2.2f)).start()
+            }
+            false
+        }
+    }
+
+    /** Album art ka dhundhla version background mein, crossfade ke saath. */
+    fun bindBlur(iv: ImageView, song: Song?) {
+        val key = "blur" + (song?.id ?: -1L)
+        iv.tag = key
+        if (song == null) {
+            iv.setImageDrawable(null)
+            return
+        }
+        ArtworkLoader.loadBlur(iv.context, song) { bmp ->
+            if (iv.tag == key) {
+                if (bmp == null) {
+                    iv.setImageDrawable(null)
+                } else {
+                    var old: Drawable? = iv.drawable
+                    if (old is TransitionDrawable) old = old.getDrawable(1)
+                    val td = TransitionDrawable(
+                        arrayOf(old ?: ColorDrawable(Color.TRANSPARENT), BitmapDrawable(iv.resources, bmp))
+                    )
+                    td.isCrossFadeEnabled = true
+                    iv.setImageDrawable(td)
+                    td.startTransition(500)
+                }
             }
         }
     }

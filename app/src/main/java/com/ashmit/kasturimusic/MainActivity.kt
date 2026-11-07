@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -18,6 +19,7 @@ import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.DecelerateInterpolator
 import android.view.inputmethod.EditorInfo
 import android.widget.BaseAdapter
 import android.widget.EditText
@@ -90,6 +92,9 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     private lateinit var searchBox: EditText
     private lateinit var tabViews: List<TextView>
     private lateinit var mini: LinearLayout
+    private lateinit var miniCard: FrameLayout
+    private lateinit var miniBlur: ImageView
+    private var miniWasVisible = false
     private lateinit var miniArt: ImageView
     private lateinit var miniTitle: TextView
     private lateinit var miniSub: TextView
@@ -207,15 +212,24 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     private fun updateMini() {
         val s = AudioPlayerManager.current
         if (s == null) {
-            mini.visibility = View.GONE
+            miniCard.visibility = View.GONE
+            miniWasVisible = false
             return
         }
-        mini.visibility = View.VISIBLE
+        if (!miniWasVisible) {
+            miniWasVisible = true
+            miniCard.visibility = View.VISIBLE
+            miniCard.translationY = dp(90).toFloat()
+            miniCard.alpha = 0f
+            miniCard.animate().translationY(0f).alpha(1f).setDuration(380)
+                .setInterpolator(DecelerateInterpolator(1.8f)).start()
+        }
         miniTitle.text = s.title
         miniSub.text = s.artist
         if (s.id != miniShownId) {
             miniShownId = s.id
             Ui.bindArt(miniArt, s, 160)
+            Ui.bindBlur(miniBlur, s)
         }
         miniPlay.setImageResource(if (AudioPlayerManager.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
     }
@@ -361,10 +375,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         mini = LinearLayout(this)
         mini.orientation = LinearLayout.HORIZONTAL
         mini.gravity = Gravity.CENTER_VERTICAL
-        mini.background = Ui.roundRect(Ui.GRAPHITE, dp(16).toFloat())
         mini.setPadding(dp(8), dp(8), dp(8), dp(8))
-        mini.visibility = View.GONE
-        mini.setOnClickListener { nowPlaying.show() }
         miniArt = ImageView(this)
         miniArt.setBackgroundColor(Ui.GRAPHITE2)
         Ui.round(miniArt, dp(8).toFloat())
@@ -388,14 +399,36 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         mini.addView(miniCol, mlp)
         miniPlay = Ui.iconButton(this, R.drawable.ic_play, Color.WHITE, 10)
         miniPlay.setOnClickListener { AudioPlayerManager.toggle() }
+        Ui.pressable(miniPlay)
         mini.addView(miniPlay, LinearLayout.LayoutParams(dp(44), dp(44)))
         val miniNext = Ui.iconButton(this, R.drawable.ic_next, Color.WHITE, 10)
         miniNext.setOnClickListener { AudioPlayerManager.next() }
+        Ui.pressable(miniNext)
         mini.addView(miniNext, LinearLayout.LayoutParams(dp(44), dp(44)))
         val mplp = FrameLayout.LayoutParams(match, dp(64))
         mplp.gravity = Gravity.BOTTOM
         mplp.setMargins(dp(10), 0, dp(10), dp(10))
-        root.addView(mini, mplp)
+        miniCard = FrameLayout(this)
+        miniCard.setBackgroundColor(Ui.GRAPHITE)
+        Ui.round(miniCard, dp(18).toFloat())
+        miniCard.visibility = View.GONE
+        miniBlur = ImageView(this)
+        miniBlur.scaleType = ImageView.ScaleType.CENTER_CROP
+        miniCard.addView(miniBlur, FrameLayout.LayoutParams(match, match))
+        val scrim = View(this)
+        scrim.setBackgroundColor(Color.argb(110, 0, 0, 0))
+        miniCard.addView(scrim, FrameLayout.LayoutParams(match, match))
+        miniCard.addView(mini, FrameLayout.LayoutParams(match, match))
+        val edge = View(this)
+        val eg = GradientDrawable()
+        eg.setColor(Color.TRANSPARENT)
+        eg.cornerRadius = dp(18).toFloat()
+        eg.setStroke(dp(1), Color.argb(60, 255, 255, 255))
+        edge.background = eg
+        miniCard.addView(edge, FrameLayout.LayoutParams(match, match))
+        miniCard.setOnClickListener { nowPlaying.show() }
+        Ui.pressable(miniCard)
+        root.addView(miniCard, mplp)
 
         nowPlaying = NowPlayingView(this) { nowPlaying.hide() }
         root.addView(nowPlaying, FrameLayout.LayoutParams(match, match))

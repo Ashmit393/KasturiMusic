@@ -13,6 +13,8 @@ import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.view.animation.AccelerateInterpolator
+import android.view.animation.DecelerateInterpolator
 import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.ImageButton
@@ -27,6 +29,9 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
     private val handler = Handler(Looper.getMainLooper())
     private val audio = ctx.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val slot = FrameLayout(ctx)
+    private val bgBlur = ImageView(ctx)
+    private var blurId = -1L
+    private var artScaleTarget = 1f
     private val artView = ImageView(ctx)
     private val lyricsPanel = LyricsPanel(ctx, { ms -> AudioPlayerManager.seekTo(ms) }, { showLyricsMenu() })
     private val titleView = TextView(ctx)
@@ -81,6 +86,11 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
     private fun build() {
         val match = ViewGroup.LayoutParams.MATCH_PARENT
         val wrap = ViewGroup.LayoutParams.WRAP_CONTENT
+        bgBlur.scaleType = ImageView.ScaleType.CENTER_CROP
+        addView(bgBlur, FrameLayout.LayoutParams(match, match))
+        val scrim = View(context)
+        scrim.setBackgroundColor(Color.argb(150, 0, 0, 0))
+        addView(scrim, FrameLayout.LayoutParams(match, match))
         val col = LinearLayout(context)
         col.orientation = LinearLayout.VERTICAL
         col.gravity = Gravity.CENTER_HORIZONTAL
@@ -256,6 +266,9 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         }
         lyricsBtn.setOnClickListener { toggleLyrics() }
         queueBtn.setOnClickListener { showQueue() }
+        for (v in listOf<View>(playBtn, prevBtn, nextBtn, shuffleBtn, repeatBtn, heartBtn, lyricsBtn, queueBtn)) {
+            Ui.pressable(v)
+        }
     }
 
     fun refresh() {
@@ -266,6 +279,16 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         if (id != shownId && artPx > 0) {
             shownId = id
             Ui.bindArt(artView, s, artPx, 48)
+        }
+        if (id != blurId) {
+            blurId = id
+            Ui.bindBlur(bgBlur, s)
+        }
+        val t = if (AudioPlayerManager.isPlaying) 1f else 0.9f
+        if (t != artScaleTarget) {
+            artScaleTarget = t
+            artView.animate().scaleX(t).scaleY(t).setDuration(350)
+                .setInterpolator(DecelerateInterpolator(1.5f)).start()
         }
         if (lyricsMode && isOpen && id != lyricsSongId) loadLyrics()
         playBtn.setImageResource(if (AudioPlayerManager.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
@@ -376,14 +399,14 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         val h = if (height > 0) height else resources.displayMetrics.heightPixels
         translationY = h.toFloat()
         refresh()
-        animate().translationY(0f).setDuration(220).start()
+        animate().translationY(0f).setDuration(380).setInterpolator(DecelerateInterpolator(1.8f)).start()
         handler.post(ticker)
     }
 
     fun hide() {
         handler.removeCallbacks(ticker)
         val h = if (height > 0) height else resources.displayMetrics.heightPixels
-        animate().translationY(h.toFloat()).setDuration(200).withEndAction {
+        animate().translationY(h.toFloat()).setDuration(260).setInterpolator(AccelerateInterpolator(1.4f)).withEndAction {
             visibility = View.GONE
         }.start()
     }
