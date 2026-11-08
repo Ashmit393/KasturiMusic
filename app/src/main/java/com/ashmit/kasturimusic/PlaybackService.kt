@@ -17,7 +17,12 @@ import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.os.Build
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.os.IBinder
+import android.os.SystemClock
 
 /** Background playback + notification + lock-screen controls. Player ka kaam AudioPlayerManager karta hai. */
 class PlaybackService : Service(), AudioPlayerManager.Listener {
@@ -34,6 +39,40 @@ class PlaybackService : Service(), AudioPlayerManager.Listener {
     private lateinit var session: MediaSession
     private var foreground = false
     private var lastArtKey = ""
+    private var shakeOn = false
+
+    private val shakeListener = object : SensorEventListener {
+        private var last = 0L
+        override fun onSensorChanged(e: SensorEvent) {
+            val x = e.values[0]
+            val y = e.values[1]
+            val z = e.values[2]
+            val g = Math.sqrt((x * x + y * y + z * z).toDouble()) / 9.81
+            if (g > 2.6) {
+                val now = SystemClock.elapsedRealtime()
+                if (now - last > 1200L) {
+                    last = now
+                    AudioPlayerManager.next()
+                }
+            }
+        }
+        override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
+    }
+
+    /** Shake sensor sirf tab chalta hai jab setting on ho aur gaana baj raha ho (battery bachane ke liye). */
+    private fun updateShake() {
+        val want = SettingsManager.shake && AudioPlayerManager.isPlaying
+        if (want == shakeOn) return
+        val sm = getSystemService(SensorManager::class.java) ?: return
+        if (want) {
+            val acc = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) ?: return
+            sm.registerListener(shakeListener, acc, SensorManager.SENSOR_DELAY_UI)
+            shakeOn = true
+        } else {
+            sm.unregisterListener(shakeListener)
+            shakeOn = false
+        }
+    }
 
     private val noisy = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -97,6 +136,7 @@ class PlaybackService : Service(), AudioPlayerManager.Listener {
     override fun onDestroy() {
         AudioPlayerManager.serviceActive = false
         AudioPlayerManager.removeListener(this)
+        try { getSystemService(SensorManager::class.java)?.unregisterListener(shakeListener) } catch (e: Exception) { }
         try { unregisterReceiver(noisy) } catch (e: Exception) { }
         session.release()
         super.onDestroy()
@@ -180,6 +220,7 @@ class PlaybackService : Service(), AudioPlayerManager.Listener {
         } else {
             getSystemService(NotificationManager::class.java).notify(NOTIF_ID, n)
         }
+        updateShake()
         if (s == null) {
             stopForeground(STOP_FOREGROUND_REMOVE)
             foreground = false

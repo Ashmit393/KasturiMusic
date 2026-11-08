@@ -58,7 +58,7 @@ object Ui {
     }
 
     /** Album art laga deta hai (cache + background thread). px = bitmap size. */
-    fun bindArt(iv: ImageView, song: Song?, px: Int, padDp: Int = 12) {
+    fun bindArt(iv: ImageView, song: Song?, px: Int, padDp: Int = 12, loadIfMissing: Boolean = true) {
         val key = if (song == null) "none" else ArtworkLoader.key(song, px)
         iv.tag = key
         val p = dp(iv.context, padDp)
@@ -67,6 +67,7 @@ object Ui {
         iv.setImageResource(R.drawable.ic_note)
         iv.setColorFilter(DIM)
         if (song == null) return
+        if (!loadIfMissing && ArtworkLoader.cached(song, px) == null) return
         ArtworkLoader.load(iv.context, song, px) { bmp ->
             if (bmp != null && iv.tag == key) {
                 iv.setPadding(0, 0, 0, 0)
@@ -116,5 +117,12 @@ object Ui {
                 }
             }
         }
+    }
+}
+
+/** Radius badalne wala rounded outline (animation ke liye). */
+class RoundOutline(var radius: Float) : ViewOutlineProvider() {
+    override fun getOutline(view: View, outline: Outline) {
+        outline.setRoundRect(0, 0, view.width, view.height, radius)
     }
 }

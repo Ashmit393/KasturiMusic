@@ -6,6 +6,9 @@ import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaPlayer
+import android.os.Handler
+import android.os.Looper
+import android.os.SystemClock
 import android.os.PowerManager
 
 object AudioPlayerManager {
@@ -35,6 +38,77 @@ object AudioPlayerManager {
     var isPlaying: Boolean = false
         private set
     var serviceActive: Boolean = false
+
+    // ---------- sleep timer ----------
+    private val handler = Handler(Looper.getMainLooper())
+    private var sleepAt = 0L
+    private val sleepRunnable = Runnable {
+        sleepAt = 0L
+        pause()
+    }
+
+    fun setSleepTimer(minutes: Int) {
+        handler.removeCallbacks(sleepRunnable)
+        if (minutes <= 0) {
+            sleepAt = 0L
+        } else {
+            sleepAt = SystemClock.elapsedRealtime() + minutes * 60_000L
+            handler.postDelayed(sleepRunnable, minutes * 60_000L)
+        }
+        notifyChanged()
+    }
+
+    fun sleepRemainingMs(): Long =
+        if (sleepAt == 0L) 0L else maxOf(0L, sleepAt - SystemClock.elapsedRealtime())
+
+    // ---------- fade between songs (fade-out phir fade-in, overlap nahi) ----------
+    private var duck = 1f
+    private var fade = 1f
+    private var playStartedAt = 0L
+    private val fadeTick = object : Runnable {
+        override fun run() {
+            if (!isPlaying || SettingsManager.crossfadeSec <= 0) {
+                fade = 1f
+                applyVol()
+                return
+            }
+            updateFade()
+            handler.postDelayed(this, 200)
+        }
+    }
+
+    private fun updateFade() {
+        val ms = SettingsManager.crossfadeSec * 1000L
+        val dur = current?.durationMs ?: 0L
+        val remaining = dur - position().toLong()
+        var f = 1f
+        val since = SystemClock.elapsedRealtime() - playStartedAt
+        val inLen = maxOf(1000L, ms / 2)
+        if (since < inLen) f = minOf(f, since.toFloat() / inLen)
+        if (dur > 0 && remaining < ms) f = minOf(f, remaining.toFloat() / ms)
+        fade = f.coerceIn(0f, 1f)
+        applyVol()
+    }
+
+    private fun applyVol() {
+        val v = duck * fade
+        try { player?.setVolume(v, v) } catch (e: Exception) { }
+    }
+
+    private fun startFade() {
+        handler.removeCallbacks(fadeTick)
+        if (SettingsManager.crossfadeSec > 0 && isPlaying) {
+            handler.post(fadeTick)
+        } else {
+            fade = 1f
+            applyVol()
+        }
+    }
+
+    /** Settings mein fade badalne par call hota hai. */
+    fun applyFadeSetting() {
+        startFade()
+    }
 
     val current: Song?
         get() = queue.getOrNull(index)
@@ -79,7 +153,8 @@ object AudioPlayerManager {
     }
 
     private fun setVol(v: Float) {
-        try { player?.setVolume(v, v) } catch (e: Exception) { }
+        duck = v
+        applyVol()
     }
 
     private fun requestFocus(): Boolean {
@@ -185,7 +260,10 @@ object AudioPlayerManager {
         isPlaying = autoStart
         SettingsManager.lastId = s.id
         SettingsManager.lastPos = seekMs
-        if (autoStart) MusicRepository.addRecent(s.id)
+        if (autoStart) {
+            MusicRepository.addRecent(s.id)
+            MusicRepository.addPlay(s.id)
+        }
         val mp = MediaPlayer()
         player = mp
         prepared = false
@@ -215,8 +293,12 @@ object AudioPlayerManager {
         pendingSeek = 0
         if (pendingStart && requestFocus()) {
             try {
+                playStartedAt = SystemClock.elapsedRealtime()
+                if (SettingsManager.crossfadeSec > 0) fade = 0f
+                applyVol()
                 mp.start()
                 isPlaying = true
+                startFade()
                 if (!serviceActive) ensureService()
             } catch (e: Exception) {
                 isPlaying = false
@@ -249,6 +331,7 @@ object AudioPlayerManager {
         if (!requestFocus()) return
         try { mp.start() } catch (e: Exception) { return }
         isPlaying = true
+        startFade()
         if (!serviceActive) ensureService()
         notifyChanged()
     }
@@ -265,6 +348,9 @@ object AudioPlayerManager {
             try { if (mp.isPlaying) mp.pause() } catch (e: Exception) { }
         }
         isPlaying = false
+        handler.removeCallbacks(fadeTick)
+        fade = 1f
+        applyVol()
         savePosition()
         notifyChanged()
     }

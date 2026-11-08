@@ -1,5 +1,9 @@
 package com.ashmit.kasturimusic
 
+import android.animation.Animator
+import android.animation.AnimatorListenerAdapter
+import android.animation.TimeInterpolator
+import android.animation.ValueAnimator
 import android.app.AlertDialog
 import android.content.Context
 import android.content.res.ColorStateList
@@ -11,6 +15,8 @@ import android.os.Looper
 import android.text.InputType
 import android.text.TextUtils
 import android.view.Gravity
+import android.view.GestureDetector
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.animation.AccelerateInterpolator
@@ -32,6 +38,21 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
     private val bgBlur = ImageView(ctx)
     private var blurId = -1L
     private var artScaleTarget = 1f
+    private val timerBtn = TextView(ctx)
+    private var anim: ValueAnimator? = null
+    private var progress = 0f
+    var onProgress: ((Float) -> Unit)? = null
+    private val swipe = GestureDetector(ctx, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onDown(e: MotionEvent): Boolean = true
+        override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+            val y0 = e1?.y ?: return false
+            if (y0 < dp(120) && velocityY > 900f && Math.abs(velocityY) > Math.abs(velocityX)) {
+                hide()
+                return true
+            }
+            return false
+        }
+    })
     private val artView = ImageView(ctx)
     private val lyricsPanel = LyricsPanel(ctx, { ms -> AudioPlayerManager.seekTo(ms) }, { showLyricsMenu() })
     private val titleView = TextView(ctx)
@@ -60,6 +81,7 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         override fun run() {
             updateProgress()
             updateVolume()
+            updateTimerLabel()
             if (lyricsMode) lyricsPanel.tick(AudioPlayerManager.position())
             handler.postDelayed(this, if (lyricsMode) 250L else 500L)
         }
@@ -67,6 +89,11 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
 
     val isOpen: Boolean
         get() = visibility == View.VISIBLE
+
+    override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
+        swipe.onTouchEvent(ev)
+        return super.onInterceptTouchEvent(ev)
+    }
 
     init {
         setBackgroundColor(Ui.BLACK)
@@ -111,7 +138,12 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         label.gravity = Gravity.CENTER
         label.letterSpacing = 0.15f
         top.addView(label, LinearLayout.LayoutParams(0, wrap, 1f))
-        top.addView(View(context), LinearLayout.LayoutParams(dp(48), dp(48)))
+        timerBtn.text = "Timer"
+        timerBtn.textSize = 12f
+        timerBtn.setTextColor(Ui.SILVER)
+        timerBtn.gravity = Gravity.CENTER
+        timerBtn.setOnClickListener { showSleepDialog() }
+        top.addView(timerBtn, LinearLayout.LayoutParams(dp(48), dp(48)))
         col.addView(top, LinearLayout.LayoutParams(match, wrap))
 
         // slot: artwork ya lyrics (bachi hui jagah le leta hai)
@@ -393,22 +425,65 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
     }
 
     // ---------------- show / hide ----------------
+    private fun updateTimerLabel() {
+        val ms = AudioPlayerManager.sleepRemainingMs()
+        timerBtn.text = if (ms <= 0L) "Timer" else (ms / 60000L + 1L).toString() + "m"
+        timerBtn.setTextColor(if (ms > 0L) Color.WHITE else Ui.SILVER)
+    }
+
+    private fun showSleepDialog() {
+        val labels = arrayOf("Off", "15 minutes", "30 minutes", "45 minutes", "60 minutes", "90 minutes")
+        val mins = intArrayOf(0, 15, 30, 45, 60, 90)
+        dialog().setTitle("Sleep timer").setItems(labels) { _, which ->
+            AudioPlayerManager.setSleepTimer(mins[which])
+            updateTimerLabel()
+        }.show()
+    }
+
+    private fun applyProgress(p: Float) {
+        progress = p
+        val dm = resources.displayMetrics
+        val h = if (height > 0) height else dm.heightPixels
+        val w = if (width > 0) width else dm.widthPixels
+        pivotX = w / 2f
+        pivotY = h.toFloat()
+        translationY = (1f - p) * h * 0.92f
+        val sc = 0.9f + 0.1f * p
+        scaleX = sc
+        scaleY = sc
+        alpha = (p * 1.8f).coerceIn(0f, 1f)
+        onProgress?.invoke(p)
+    }
+
+    private fun animateTo(target: Float, duration: Long, interp: TimeInterpolator, onEnd: (() -> Unit)?) {
+        anim?.cancel()
+        val a = ValueAnimator.ofFloat(progress, target)
+        a.duration = duration
+        a.interpolator = interp
+        a.addUpdateListener { applyProgress(it.animatedValue as Float) }
+        a.addListener(object : AnimatorListenerAdapter() {
+            private var cancelled = false
+            override fun onAnimationCancel(an: Animator) { cancelled = true }
+            override fun onAnimationEnd(an: Animator) {
+                if (!cancelled && onEnd != null) onEnd()
+            }
+        })
+        anim = a
+        a.start()
+    }
+
     fun show() {
         handler.removeCallbacks(ticker)
         visibility = View.VISIBLE
-        val h = if (height > 0) height else resources.displayMetrics.heightPixels
-        translationY = h.toFloat()
+        applyProgress(progress)
         refresh()
-        animate().translationY(0f).setDuration(380).setInterpolator(DecelerateInterpolator(1.8f)).start()
+        animateTo(1f, 460L, DecelerateInterpolator(1.9f), null)
         handler.post(ticker)
     }
 
     fun hide() {
         handler.removeCallbacks(ticker)
-        val h = if (height > 0) height else resources.displayMetrics.heightPixels
-        animate().translationY(h.toFloat()).setDuration(260).setInterpolator(AccelerateInterpolator(1.4f)).withEndAction {
-            visibility = View.GONE
-        }.start()
+        animateTo(0f, 320L, AccelerateInterpolator(1.3f)) { visibility = View.GONE }
     }
 
     fun pauseTicker() {

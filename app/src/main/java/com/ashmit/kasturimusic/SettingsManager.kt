@@ -12,6 +12,15 @@ object SettingsManager {
         }
     }
 
+    /** Gaano ke beech fade (seconds). 0 = off */
+    var crossfadeSec: Int
+        get() = p.getInt("xfade", 0)
+        set(v) { p.edit().putInt("xfade", v).apply() }
+
+    var shake: Boolean
+        get() = p.getBoolean("shake", false)
+        set(v) { p.edit().putBoolean("shake", v).apply() }
+
     /** 0 = Light, 1 = Dark, 2 = AMOLED black (default) */
     var theme: Int
         get() = p.getInt("theme", 2)

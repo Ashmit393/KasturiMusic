@@ -132,6 +132,24 @@ class SettingsActivity : Activity() {
         sc.setOnClickListener { showEqualizer() }
         col.addView(sc, LinearLayout.LayoutParams(match, wrap))
 
+        // Playback
+        col.addView(label("PLAYBACK"))
+        val pc = card()
+        pc.addView(settingRow("Sleep timer", { sleepText() }) { sub -> showSleepDialog(sub) })
+        pc.addView(settingRow("Fade between songs", { fadeText() }) { sub -> showFadeDialog(sub) })
+        val shakeSw = Switch(this)
+        shakeSw.text = "Shake to change song"
+        shakeSw.textSize = 16f
+        shakeSw.setTextColor(Theme.text)
+        shakeSw.isChecked = SettingsManager.shake
+        shakeSw.setPadding(0, dp(12), 0, dp(12))
+        shakeSw.setOnCheckedChangeListener { _, c ->
+            SettingsManager.shake = c
+            AudioPlayerManager.notifyChanged()
+        }
+        pc.addView(shakeSw)
+        col.addView(pc, LinearLayout.LayoutParams(match, wrap))
+
         // About
         col.addView(label("ABOUT"))
         val abc = card()
@@ -156,6 +174,54 @@ class SettingsActivity : Activity() {
         col.addView(abc, LinearLayout.LayoutParams(match, wrap))
 
         setContentView(scroll)
+    }
+
+    // ---------------- playback settings ----------------
+    private fun settingRow(title: String, sub: () -> String, onClick: (TextView) -> Unit): LinearLayout {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.VERTICAL
+        row.setPadding(0, dp(10), 0, dp(10))
+        val t = TextView(this)
+        t.text = title
+        t.textSize = 16f
+        t.setTextColor(Theme.text)
+        val s = TextView(this)
+        s.text = sub()
+        s.textSize = 13f
+        s.setTextColor(Theme.sub)
+        row.addView(t)
+        row.addView(s)
+        row.setOnClickListener { onClick(s) }
+        return row
+    }
+
+    private fun sleepText(): String {
+        val ms = AudioPlayerManager.sleepRemainingMs()
+        return if (ms <= 0L) "Off" else (ms / 60000L + 1L).toString() + " min left"
+    }
+
+    private fun fadeText(): String {
+        val s = SettingsManager.crossfadeSec
+        return if (s == 0) "Off" else "$s seconds"
+    }
+
+    private fun showSleepDialog(sub: TextView) {
+        val labels = arrayOf("Off", "15 minutes", "30 minutes", "45 minutes", "60 minutes", "90 minutes")
+        val mins = intArrayOf(0, 15, 30, 45, 60, 90)
+        dialog().setTitle("Sleep timer").setItems(labels) { _, which ->
+            AudioPlayerManager.setSleepTimer(mins[which])
+            sub.text = sleepText()
+        }.show()
+    }
+
+    private fun showFadeDialog(sub: TextView) {
+        val labels = arrayOf("Off", "3 seconds", "6 seconds", "9 seconds", "12 seconds")
+        val secs = intArrayOf(0, 3, 6, 9, 12)
+        dialog().setTitle("Fade between songs").setItems(labels) { _, which ->
+            SettingsManager.crossfadeSec = secs[which]
+            AudioPlayerManager.applyFadeSetting()
+            sub.text = fadeText()
+        }.show()
     }
 
     // ---------------- equalizer ----------------
