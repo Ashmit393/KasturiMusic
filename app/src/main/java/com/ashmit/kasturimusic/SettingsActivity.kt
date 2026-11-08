@@ -24,7 +24,28 @@ class SettingsActivity : Activity() {
     private val match = ViewGroup.LayoutParams.MATCH_PARENT
     private val wrap = ViewGroup.LayoutParams.WRAP_CONTENT
 
+    private var pendingFloating = false
+    private var floatSwitch: Switch? = null
+
     private fun dp(v: Int) = Ui.dp(this, v)
+
+    override fun onStart() {
+        super.onStart()
+        AudioPlayerManager.activityStarted()
+    }
+
+    override fun onStop() {
+        AudioPlayerManager.activityStopped()
+        super.onStop()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (pendingFloating && Settings.canDrawOverlays(this)) {
+            pendingFloating = false
+            floatSwitch?.isChecked = true
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -156,15 +177,18 @@ class SettingsActivity : Activity() {
         floatingSw.text = "Floating player over other apps"
         floatingSw.textSize = 16f
         floatingSw.setTextColor(Theme.text)
-        floatingSw.isChecked = SettingsManager.floatingPlayer
-        floatingSw.setPadding(0, dp(12), 0, dp(12))
+        floatingSw.isChecked = SettingsManager.floatingPlayer && Settings.canDrawOverlays(this)
+        floatingSw.setPadding(0, dp(12), 0, dp(4))
+        floatSwitch = floatingSw
         floatingSw.setOnCheckedChangeListener { _, enabled ->
-            if (enabled && android.os.Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
+            if (enabled && !Settings.canDrawOverlays(this)) {
+                pendingFloating = true
                 floatingSw.isChecked = false
                 startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
-                android.widget.Toast.makeText(this, "Allow display over other apps, then enable this option again.", android.widget.Toast.LENGTH_LONG).show()
+                android.widget.Toast.makeText(this, "Allow karke wapas aao, option apne aap on ho jaayega.", android.widget.Toast.LENGTH_LONG).show()
             } else {
                 SettingsManager.floatingPlayer = enabled
+                AudioPlayerManager.notifyChanged()
             }
         }
         pc.addView(floatingSw)

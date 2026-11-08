@@ -39,6 +39,21 @@ object AudioPlayerManager {
         private set
     var serviceActive: Boolean = false
 
+    // ---------- app screen par hai ya nahi (floating player ke liye) ----------
+    private var visibleCount = 0
+    val appVisible: Boolean
+        get() = visibleCount > 0
+
+    fun activityStarted() {
+        visibleCount++
+        notifyChanged()
+    }
+
+    fun activityStopped() {
+        visibleCount = maxOf(0, visibleCount - 1)
+        notifyChanged()
+    }
+
     // ---------- sleep timer ----------
     private val handler = Handler(Looper.getMainLooper())
     private var sleepAt = 0L

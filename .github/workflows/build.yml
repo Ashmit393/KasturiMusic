@@ -46,6 +46,15 @@ jobs:
           fi
           echo "Found APK: $APK"
           cp "$APK" KasturiMusic.apk
+      - name: Verify APK signature
+        run: |
+          set -e
+          APKSIGNER=$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$APKSIGNER" ]; then
+            echo "ERROR: apksigner not found"
+            exit 1
+          fi
+          "$APKSIGNER" verify --print-certs KasturiMusic.apk
       - uses: actions/upload-artifact@v4
         with:
           name: kasturi-music-release-apk

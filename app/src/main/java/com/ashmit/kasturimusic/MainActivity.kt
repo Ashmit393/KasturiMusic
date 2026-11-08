@@ -164,6 +164,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
 
     override fun onStart() {
         super.onStart()
+        AudioPlayerManager.activityStarted()
         if (SettingsManager.theme != appliedTheme) {
             recreate()
             return
@@ -182,6 +183,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         if (SettingsManager.floatingPlayer && AudioPlayerManager.current != null && android.os.Build.VERSION.SDK_INT >= 23 && android.provider.Settings.canDrawOverlays(this)) {
             try { startService(Intent(this, FloatingPlayerService::class.java)) } catch (_: Exception) { }
         }
+        AudioPlayerManager.activityStopped()
         super.onStop()
     }
 
@@ -309,6 +311,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         miniCol.alpha = a
         miniPlay.alpha = a
         miniNext.alpha = a
+        miniPrev.alpha = a
     }
 
     private fun setMiniContentVisible(v: Boolean) {
@@ -316,6 +319,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         miniCol.visibility = vis
         miniPlay.visibility = vis
         miniNext.visibility = vis
+        miniPrev.visibility = vis
     }
 
     private fun setMiniCollapsed(c: Boolean) {
