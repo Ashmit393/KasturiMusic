@@ -12,32 +12,19 @@ android {
         minSdk = 26
         targetSdk = 34
         versionCode = 5
-        versionName = "1.4.0"
-    }
-
-    signingConfigs {
-        create("release") {
-            val ks = System.getenv("KEYSTORE_PATH")
-            if (ks != null) {
-                storeFile = file(ks)
-                storePassword = System.getenv("KEYSTORE_PASSWORD")
-                keyAlias = "kasturi"
-                keyPassword = System.getenv("KEYSTORE_PASSWORD")
-            }
-        }
+        versionName = "1.5.0"
     }
 
     buildTypes {
         release {
-            isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("release")
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-    }
+    kotlinOptions { jvmTarget = "17" }
 }

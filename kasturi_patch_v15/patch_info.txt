@@ -1,0 +1,7 @@
+KASTURI MUSIC V1.5.0 PATCH
+Based on the supplied KasturiPatch4 source snapshot.
+Features: redesigned Home screen inherited from Patch4, Previous control in the in-app mini-player,
+optional floating overlay bubble with expanded Previous/Play-Pause/Next controls, overlay permission
+setting, and version bump to 1.5.0.
+IMPORTANT: This patch must be applied to the project that already has KasturiPatch4 applied.
+The supplied original KasturiMusic.zip is version 1.0.0 and is NOT the correct base by itself.

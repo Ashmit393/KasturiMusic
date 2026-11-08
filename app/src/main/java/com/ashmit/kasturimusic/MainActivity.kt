@@ -139,6 +139,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     private lateinit var miniTitle: TextView
     private lateinit var miniSub: TextView
     private lateinit var miniPlay: ImageButton
+    private lateinit var miniPrev: ImageButton
     private lateinit var miniNext: ImageButton
     private lateinit var nowPlaying: NowPlayingView
 
@@ -167,6 +168,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             recreate()
             return
         }
+        stopService(Intent(this, FloatingPlayerService::class.java))
         AudioPlayerManager.addListener(this)
         onChanged()
         nowPlaying.resumeTicker()
@@ -177,6 +179,9 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         AudioPlayerManager.removeListener(this)
         if (::nowPlaying.isInitialized) nowPlaying.pauseTicker()
         AudioPlayerManager.savePosition()
+        if (SettingsManager.floatingPlayer && AudioPlayerManager.current != null && android.os.Build.VERSION.SDK_INT >= 23 && android.provider.Settings.canDrawOverlays(this)) {
+            try { startService(Intent(this, FloatingPlayerService::class.java)) } catch (_: Exception) { }
+        }
         super.onStop()
     }
 
@@ -559,10 +564,14 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         val mlp = LinearLayout.LayoutParams(0, wrap, 1f)
         mlp.leftMargin = dp(10)
         mini.addView(miniCol, mlp)
+        miniPrev = Ui.iconButton(this, R.drawable.ic_prev, Color.WHITE, 10)
+        miniPrev.setOnClickListener { AudioPlayerManager.prev() }
+        Ui.pressable(miniPrev)
+        mini.addView(miniPrev, LinearLayout.LayoutParams(dp(40), dp(44)))
         miniPlay = Ui.iconButton(this, R.drawable.ic_play, Color.WHITE, 10)
         miniPlay.setOnClickListener { AudioPlayerManager.toggle() }
         Ui.pressable(miniPlay)
-        mini.addView(miniPlay, LinearLayout.LayoutParams(dp(44), dp(44)))
+        mini.addView(miniPlay, LinearLayout.LayoutParams(dp(40), dp(44)))
         miniNext = Ui.iconButton(this, R.drawable.ic_next, Color.WHITE, 10)
         miniNext.setOnClickListener { AudioPlayerManager.next() }
         Ui.pressable(miniNext)

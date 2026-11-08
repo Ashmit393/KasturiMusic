@@ -1,0 +1,14 @@
+{
+  "name": "Kasturi Music",
+  "version": "1.5.0",
+  "base": "KasturiPatch4 applied project",
+  "versionCode": 5,
+  "files": [
+    "app/src/main/AndroidManifest.xml",
+    "app/build.gradle.kts",
+    "app/src/main/java/com/ashmit/kasturimusic/MainActivity.kt",
+    "app/src/main/java/com/ashmit/kasturimusic/SettingsActivity.kt",
+    "app/src/main/java/com/ashmit/kasturimusic/SettingsManager.kt",
+    "app/src/main/java/com/ashmit/kasturimusic/FloatingPlayerService.kt"
+  ]
+}

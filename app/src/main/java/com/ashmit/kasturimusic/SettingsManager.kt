@@ -17,6 +17,10 @@ object SettingsManager {
         get() = p.getInt("xfade", 0)
         set(v) { p.edit().putInt("xfade", v).apply() }
 
+    var floatingPlayer: Boolean
+        get() = p.getBoolean("floating_player", false)
+        set(v) { p.edit().putBoolean("floating_player", v).apply() }
+
     var shake: Boolean
         get() = p.getBoolean("shake", false)
         set(v) { p.edit().putBoolean("shake", v).apply() }

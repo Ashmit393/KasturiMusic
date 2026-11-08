@@ -3,6 +3,9 @@ package com.ashmit.kasturimusic
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.res.ColorStateList
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import android.graphics.Typeface
 import android.os.Bundle
 import android.view.Gravity
@@ -148,6 +151,23 @@ class SettingsActivity : Activity() {
             AudioPlayerManager.notifyChanged()
         }
         pc.addView(shakeSw)
+
+        val floatingSw = Switch(this)
+        floatingSw.text = "Floating player over other apps"
+        floatingSw.textSize = 16f
+        floatingSw.setTextColor(Theme.text)
+        floatingSw.isChecked = SettingsManager.floatingPlayer
+        floatingSw.setPadding(0, dp(12), 0, dp(12))
+        floatingSw.setOnCheckedChangeListener { _, enabled ->
+            if (enabled && android.os.Build.VERSION.SDK_INT >= 23 && !Settings.canDrawOverlays(this)) {
+                floatingSw.isChecked = false
+                startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                android.widget.Toast.makeText(this, "Allow display over other apps, then enable this option again.", android.widget.Toast.LENGTH_LONG).show()
+            } else {
+                SettingsManager.floatingPlayer = enabled
+            }
+        }
+        pc.addView(floatingSw)
         col.addView(pc, LinearLayout.LayoutParams(match, wrap))
 
         // About
