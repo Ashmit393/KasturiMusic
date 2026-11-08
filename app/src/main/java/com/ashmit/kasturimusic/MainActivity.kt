@@ -38,6 +38,7 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
+import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 
@@ -142,6 +143,16 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     private lateinit var miniPrev: ImageButton
     private lateinit var miniNext: ImageButton
     private lateinit var nowPlaying: NowPlayingView
+    private lateinit var homeScroll: ScrollView
+    private lateinit var homeBox: LinearLayout
+    private lateinit var tabsScroll: HorizontalScrollView
+    private lateinit var searchRowView: LinearLayout
+    private var homeHero: View? = null
+    private var homeKey = ""
+    private var scanCount = 0
+    private val navItems = ArrayList<LinearLayout>()
+    private val navIcons = ArrayList<ImageView>()
+    private val navLabels = ArrayList<TextView>()
 
     private fun dp(v: Int) = Ui.dp(this, v)
 
@@ -181,6 +192,15 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         if (::nowPlaying.isInitialized) nowPlaying.pauseTicker()
         AudioPlayerManager.savePosition()
         if (SettingsManager.floatingPlayer && AudioPlayerManager.current != null && android.os.Build.VERSION.SDK_INT >= 23 && android.provider.Settings.canDrawOverlays(this)) {
+            if (::miniCard.isInitialized && miniCard.visibility == View.VISIBLE && miniCard.height > 0) {
+                val loc = IntArray(2)
+                miniCard.getLocationOnScreen(loc)
+                FloatingPlayerService.startX = (resources.displayMetrics.widthPixels - dp(64)) / 2
+                FloatingPlayerService.startY = loc[1]
+            } else {
+                FloatingPlayerService.startX = -1
+                FloatingPlayerService.startY = -1
+            }
             try { startService(Intent(this, FloatingPlayerService::class.java)) } catch (_: Exception) { }
         }
         AudioPlayerManager.activityStopped()
@@ -243,6 +263,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
                 scanning = false
                 scanned = true
                 lastScan = System.currentTimeMillis()
+                scanCount++
                 MusicRepository.songs = list
                 if (AudioPlayerManager.current == null) restoreLast(list)
                 else AudioPlayerManager.updateSongs(list.associateBy { it.id })
@@ -410,6 +431,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         searchRow.gravity = Gravity.CENTER_VERTICAL
         searchRow.setPadding(dp(16), dp(4), dp(8), dp(8))
         searchRow.layoutTransition = LayoutTransition()
+        searchRowView = searchRow
         searchBox = EditText(this)
         searchBox.hint = "Search songs, artists, albums"
         searchBox.setHintTextColor(Theme.sub)
@@ -463,6 +485,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         }
         tabViews = views
         val hs = HorizontalScrollView(this)
+        tabsScroll = hs
         hs.isHorizontalScrollBarEnabled = false
         hs.addView(strip)
         content.addView(hs, LinearLayout.LayoutParams(match, wrap))
@@ -476,7 +499,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         listView.overScrollMode = View.OVER_SCROLL_NEVER
         listView.clipToPadding = false
         listView.isScrollingCacheEnabled = false
-        listView.setPadding(0, 0, 0, dp(88))
+        listView.setPadding(0, 0, 0, dp(170))
         val footer = TextView(this)
         footer.text = "Made with \u2665 by Ashmit Singh"
         footer.textSize = 12f
@@ -537,6 +560,26 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         emptyView.visibility = View.GONE
         emptyView.setOnClickListener { onEmptyClick() }
         content.addView(emptyView, LinearLayout.LayoutParams(match, 0, 1f))
+
+        homeBox = LinearLayout(this)
+        homeBox.orientation = LinearLayout.VERTICAL
+        homeScroll = ScrollView(this)
+        homeScroll.isVerticalScrollBarEnabled = false
+        homeScroll.addView(homeBox, ViewGroup.LayoutParams(match, wrap))
+        homeScroll.visibility = View.GONE
+        homeScroll.setOnScrollChangeListener { _, _, y, _, oldY ->
+            val h = homeHero
+            if (h != null) {
+                h.translationY = y * 0.3f
+                h.alpha = (1f - y / dp(360).toFloat()).coerceIn(0.35f, 1f)
+            }
+            if (miniCard.visibility == View.VISIBLE) {
+                if (y <= 0) setMiniCollapsed(false)
+                else if (y - oldY > 6) setMiniCollapsed(true)
+                else if (y - oldY < -6) setMiniCollapsed(false)
+            }
+        }
+        content.addView(homeScroll, LinearLayout.LayoutParams(match, 0, 1f))
 
         root.addView(content, FrameLayout.LayoutParams(match, match))
 
@@ -639,8 +682,10 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         val fullW = resources.displayMetrics.widthPixels - dp(20)
         val mplp = FrameLayout.LayoutParams(fullW, dp(64))
         mplp.gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-        mplp.bottomMargin = dp(10)
+        mplp.bottomMargin = dp(84)
         root.addView(miniCard, mplp)
+
+        buildNav(root)
 
         nowPlaying = NowPlayingView(this) { nowPlaying.hide() }
         nowPlaying.onProgress = { p ->
@@ -966,20 +1011,253 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         rowAdapter.notifyDataSetChanged()
         titleView.text = drillTitle ?: "Kasturi Music"
         backView.visibility = if (drillSongs != null || drillPlaylist != null) View.VISIBLE else View.GONE
+        val homeMode = tab == TAB_HOME && drillSongs == null && drillPlaylist == null && query.trim().isEmpty()
         val msg: String? = when {
             !hasAudio() -> "Allow music access to see your songs.\n\nTap here"
             scanned && MusicRepository.songs.isEmpty() -> "No songs found on this phone.\n\nTap here to scan again"
-            rows.isEmpty() -> "Nothing here yet"
+            !homeMode && rows.isEmpty() -> "Nothing here yet"
             else -> null
         }
+        val showHome = homeMode && msg == null
+        homeScroll.visibility = if (showHome) View.VISIBLE else View.GONE
+        tabsScroll.visibility = if (homeMode) View.GONE else View.VISIBLE
+        searchRowView.visibility = if (homeMode) View.GONE else View.VISIBLE
         if (msg == null) {
-            listView.visibility = View.VISIBLE
+            listView.visibility = if (showHome) View.GONE else View.VISIBLE
             emptyView.visibility = View.GONE
+            if (showHome) refreshHome()
         } else {
             emptyView.text = msg + "\n\n\nMade with \u2665 by Ashmit Singh"
             listView.visibility = View.GONE
             emptyView.visibility = View.VISIBLE
         }
+        updateNav()
+    }
+
+    // ---------------- bottom navigation ----------------
+    private fun buildNav(root: FrameLayout) {
+        val pill = LinearLayout(this)
+        pill.orientation = LinearLayout.HORIZONTAL
+        pill.gravity = Gravity.CENTER
+        val g = GradientDrawable()
+        g.setColor(Color.argb(245, 26, 26, 28))
+        g.cornerRadius = dp(30).toFloat()
+        g.setStroke(dp(1), Color.argb(50, 255, 255, 255))
+        pill.background = g
+        pill.setPadding(dp(8), dp(6), dp(8), dp(6))
+        val icons = intArrayOf(R.drawable.ic_home, R.drawable.ic_search, R.drawable.ic_library)
+        val names = arrayOf("Home", "Search", "Library")
+        for (i in 0 until 3) {
+            val item = LinearLayout(this)
+            item.orientation = LinearLayout.VERTICAL
+            item.gravity = Gravity.CENTER
+            val ic = ImageView(this)
+            ic.setImageResource(icons[i])
+            ic.setColorFilter(Ui.DIM)
+            item.addView(ic, LinearLayout.LayoutParams(dp(22), dp(22)))
+            val lb = TextView(this)
+            lb.text = names[i]
+            lb.textSize = 10f
+            lb.setTextColor(Ui.DIM)
+            lb.gravity = Gravity.CENTER
+            item.addView(lb)
+            item.setOnClickListener { onNavClick(i) }
+            Ui.pressable(item)
+            pill.addView(item, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+            navItems.add(item)
+            navIcons.add(ic)
+            navLabels.add(lb)
+        }
+        val lp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(64))
+        lp.gravity = Gravity.BOTTOM
+        lp.setMargins(dp(24), 0, dp(24), dp(14))
+        root.addView(pill, lp)
+    }
+
+    private fun onNavClick(i: Int) {
+        when (i) {
+            0 -> {
+                exitSearch()
+                if (tab != TAB_HOME || drillSongs != null || drillPlaylist != null) selectTab(TAB_HOME)
+            }
+            1 -> {
+                if (tab == TAB_HOME) selectTab(TAB_SONGS)
+                searchBox.requestFocus()
+                val imm = getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+                imm.showSoftInput(searchBox, 0)
+            }
+            else -> {
+                exitSearch()
+                if (tab == TAB_HOME) selectTab(TAB_SONGS)
+            }
+        }
+    }
+
+    private fun updateNav() {
+        if (navItems.size < 3) return
+        val sel = if (searching) 1 else if (tab == TAB_HOME) 0 else 2
+        for (i in 0 until 3) {
+            val on = i == sel
+            navItems[i].background = if (on) Ui.roundRect(Color.argb(60, 255, 255, 255), dp(22).toFloat()) else null
+            navIcons[i].setColorFilter(if (on) Color.WHITE else Ui.DIM)
+            navLabels[i].setTextColor(if (on) Color.WHITE else Ui.DIM)
+            navLabels[i].setTypeface(null, if (on) Typeface.BOLD else Typeface.NORMAL)
+        }
+    }
+
+    // ---------------- Home (Your Mix) ----------------
+    private fun refreshHome() {
+        val recents = MusicRepository.recentSongs().take(12)
+        val most = MusicRepository.mostPlayed().take(12)
+        val favs = MusicRepository.favSongs().take(12)
+        val all = MusicRepository.songs
+        val key = recents.joinToString(",") { it.id.toString() } + "|" +
+            most.joinToString(",") { it.id.toString() } + "|" +
+            favs.joinToString(",") { it.id.toString() } + "|" + all.size + "|" + scanCount + "|" + appliedTheme
+        if (key == homeKey) return
+        homeKey = key
+        buildHome(recents, most, favs, all)
+    }
+
+    private fun buildHome(recents: List<Song>, most: List<Song>, favs: List<Song>, all: List<Song>) {
+        homeBox.removeAllViews()
+        val dm = resources.displayMetrics
+        val w = dm.widthPixels - dp(32)
+        val f = w / dp(328).toFloat()
+        fun s(v: Int) = (dp(v) * f).toInt()
+        val seed = (recents + most + all.take(12)).distinctBy { it.id }.take(5)
+
+        // ---- hero card ----
+        val hero = FrameLayout(this)
+        hero.setBackgroundColor(Ui.GRAPHITE)
+        Ui.round(hero, dp(28).toFloat())
+        val heroBlur = ImageView(this)
+        heroBlur.scaleType = ImageView.ScaleType.CENTER_CROP
+        hero.addView(heroBlur, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        Ui.bindBlur(heroBlur, seed.firstOrNull())
+        val heroScrim = View(this)
+        heroScrim.setBackgroundColor(Color.argb(120, 0, 0, 0))
+        hero.addView(heroScrim, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+
+        val titleCol = LinearLayout(this)
+        titleCol.orientation = LinearLayout.VERTICAL
+        titleCol.setPadding(s(20), s(16), 0, 0)
+        val big = TextView(this)
+        big.text = "Your\nMix"
+        big.textSize = 40f
+        big.setTypeface(null, Typeface.BOLD)
+        big.setTextColor(Color.WHITE)
+        big.setLineSpacing(0f, 0.9f)
+        titleCol.addView(big)
+        val subT = TextView(this)
+        subT.text = if (seed.isEmpty()) "Phone mein gaane daalo" else "Today's mix for you"
+        subT.textSize = 13f
+        subT.setTextColor(Ui.DIM)
+        subT.setPadding(0, dp(6), 0, 0)
+        titleCol.addView(subT)
+        hero.addView(titleCol, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+
+        // collage: gol artworks
+        val sizes = intArrayOf(130, 66, 52, 80, 62)
+        val lefts = intArrayOf(110, 18, 250, 24, 236)
+        val tops = intArrayOf(160, 176, 160, 236, 258)
+        for (i in seed.indices) {
+            val px = s(sizes[i])
+            val iv = ImageView(this)
+            iv.setBackgroundColor(Ui.GRAPHITE2)
+            iv.outlineProvider = RoundOutline(px / 2f)
+            iv.clipToOutline = true
+            Ui.bindArt(iv, seed[i], 200, 14)
+            val lp = FrameLayout.LayoutParams(px, px)
+            lp.leftMargin = s(lefts[i])
+            lp.topMargin = s(tops[i])
+            iv.setOnClickListener { AudioPlayerManager.playQueue(seed, i) }
+            Ui.pressable(iv)
+            hero.addView(iv, lp)
+            iv.scaleX = 0f
+            iv.scaleY = 0f
+            iv.animate().scaleX(1f).scaleY(1f).setStartDelay(140L + i * 70L).setDuration(440)
+                .setInterpolator(OvershootInterpolator(1.4f)).start()
+        }
+
+        // shuffle button
+        val shuffle = Ui.iconButton(this, R.drawable.ic_shuffle, Color.BLACK, 18)
+        shuffle.background = Ui.roundRect(Ui.SILVER, dp(34).toFloat())
+        shuffle.setOnClickListener {
+            if (all.isNotEmpty()) {
+                AudioPlayerManager.setShuffle(true)
+                AudioPlayerManager.playQueue(all, (0 until all.size).random())
+            }
+        }
+        Ui.pressable(shuffle)
+        val slp = FrameLayout.LayoutParams(dp(68), dp(68))
+        slp.gravity = Gravity.TOP or Gravity.END
+        slp.setMargins(0, dp(18), dp(18), 0)
+        hero.addView(shuffle, slp)
+
+        val hlp = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, s(330))
+        hlp.setMargins(dp(16), dp(8), dp(16), 0)
+        homeBox.addView(hero, hlp)
+        homeHero = hero
+        hero.alpha = 0f
+        hero.translationY = dp(24).toFloat()
+        hero.animate().alpha(1f).translationY(0f).setDuration(420)
+            .setInterpolator(DecelerateInterpolator(1.8f)).start()
+
+        // ---- carousels ----
+        fun carousel(title: String, list: List<Song>) {
+            if (list.isEmpty()) return
+            val label = TextView(this)
+            label.text = title
+            label.textSize = 20f
+            label.setTypeface(null, Typeface.BOLD)
+            label.setTextColor(Theme.text)
+            label.setPadding(dp(20), dp(24), dp(20), dp(10))
+            homeBox.addView(label)
+            val hs = HorizontalScrollView(this)
+            hs.isHorizontalScrollBarEnabled = false
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.setPadding(dp(16), 0, dp(8), 0)
+            for (i in list.indices) {
+                val sg = list[i]
+                val col = LinearLayout(this)
+                col.orientation = LinearLayout.VERTICAL
+                val art = ImageView(this)
+                art.setBackgroundColor(Theme.card)
+                Ui.round(art, dp(16).toFloat())
+                Ui.bindArt(art, sg, 280, 22)
+                col.addView(art, LinearLayout.LayoutParams(dp(132), dp(132)))
+                val tt = TextView(this)
+                tt.text = sg.title
+                tt.textSize = 14f
+                tt.setTextColor(Theme.text)
+                tt.isSingleLine = true
+                tt.ellipsize = TextUtils.TruncateAt.END
+                tt.setPadding(0, dp(8), 0, 0)
+                col.addView(tt)
+                val aa = TextView(this)
+                aa.text = sg.artist
+                aa.textSize = 12f
+                aa.setTextColor(Theme.sub)
+                aa.isSingleLine = true
+                aa.ellipsize = TextUtils.TruncateAt.END
+                col.addView(aa)
+                col.setOnClickListener { AudioPlayerManager.playQueue(list, i) }
+                Ui.pressable(col)
+                val clp = LinearLayout.LayoutParams(dp(132), ViewGroup.LayoutParams.WRAP_CONTENT)
+                clp.rightMargin = dp(12)
+                row.addView(col, clp)
+            }
+            hs.addView(row)
+            homeBox.addView(hs, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        }
+        carousel("Recently played", recents)
+        carousel("Most played", most)
+        carousel("Favourites", favs)
+        if (recents.isEmpty() && most.isEmpty() && favs.isEmpty()) carousel("Songs", all.take(20))
+
+        homeBox.addView(View(this), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(170)))
     }
 
     // ---------------- adapter ----------------
