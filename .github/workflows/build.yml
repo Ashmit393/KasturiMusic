@@ -25,7 +25,17 @@ jobs:
         env:
           KEYSTORE_PATH: ${{ runner.temp }}/kasturi-release.jks
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-        run: gradle assembleRelease --no-daemon
+        run: |
+          set -e
+          KEY_ALIAS="$(keytool -list -v -keystore "$KEYSTORE_PATH" -storepass "$KEYSTORE_PASSWORD" 2>/dev/null | awk -F': ' '/Alias name:/{print $2; exit}')"
+          if [ -z "$KEY_ALIAS" ]; then
+            echo "ERROR: Keystore alias detect nahi hua."
+            exit 1
+          fi
+          export KEY_ALIAS
+          export KEY_PASSWORD="$KEYSTORE_PASSWORD"
+          echo "Release signing configured."
+          gradle assembleRelease --no-daemon
       - name: Rename APK
         run: |
           APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)
