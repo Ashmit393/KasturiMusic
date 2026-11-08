@@ -27,7 +27,15 @@ jobs:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
         run: gradle assembleRelease --no-daemon
       - name: Rename APK
-        run: cp app/build/outputs/apk/release/app-release.apk KasturiMusic.apk
+        run: |
+          APK=$(find app/build/outputs/apk/release -maxdepth 1 -type f -name '*.apk' | head -n 1)
+          if [ -z "$APK" ]; then
+            echo "ERROR: Release APK not found"
+            find app/build/outputs -type f -print
+            exit 1
+          fi
+          echo "Found APK: $APK"
+          cp "$APK" KasturiMusic.apk
       - uses: actions/upload-artifact@v4
         with:
           name: kasturi-music-release-apk
