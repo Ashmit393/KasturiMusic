@@ -16,6 +16,8 @@ import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.text.Editable
 import android.text.TextUtils
@@ -44,9 +46,11 @@ import android.widget.Toast
 
 private const val TAB_HOME = 0
 private const val TAB_SONGS = 1
-private const val TAB_PLAYLISTS = 5
-private const val TAB_FAV = 6
-private const val TAB_RECENT = 7
+private const val TAB_ONLINE = 2
+private const val TAB_DOWNLOADS = 3
+private const val TAB_PLAYLISTS = 7
+private const val TAB_FAV = 8
+private const val TAB_RECENT = 9
 
 private class Row(
     val title: String,
@@ -95,7 +99,7 @@ private class RowHolder(ctx: Context) {
 class MainActivity : Activity(), AudioPlayerManager.Listener {
 
     private val tabNames = arrayOf(
-        "Home", "Songs", "Artists", "Albums", "Folders", "Playlists", "Favourites", "Recent"
+        "Home", "Local", "Online", "Downloads", "Artists", "Albums", "Folders", "Playlists", "Favourites", "Recent"
     )
     private var tab = TAB_HOME
     private var query = ""
@@ -150,6 +154,15 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     private var homeHero: View? = null
     private var homeKey = ""
     private var scanCount = 0
+    private var onlineResults: List<Song> = emptyList()
+    private var onlineStatus = ""
+    private var onlineCat = 0
+    private var onlineSeq = 0
+    private var onlineLoaded = false
+    private val onlineHandler = Handler(Looper.getMainLooper())
+    private val onlineDebounce = Runnable { fetchOnline() }
+    private lateinit var onlineChips: HorizontalScrollView
+    private var chipViews: List<TextView> = emptyList()
     private val navItems = ArrayList<LinearLayout>()
     private val navIcons = ArrayList<ImageView>()
     private val navLabels = ArrayList<TextView>()
@@ -239,6 +252,14 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         checkSelfPermission(audioPermission()) == PackageManager.PERMISSION_GRANTED
 
     private fun onEmptyClick() {
+        if (tab == TAB_ONLINE && SettingsManager.jamendoId.isBlank()) {
+            startActivity(Intent(this, SettingsActivity::class.java))
+            return
+        }
+        if (tab == TAB_DOWNLOADS) {
+            selectTab(TAB_ONLINE)
+            return
+        }
         if (!hasAudio()) {
             if (askedPermission && !shouldShowRequestPermissionRationale(audioPermission())) {
                 val i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
@@ -446,7 +467,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 query = s?.toString() ?: ""
-                refresh()
+                if (tab == TAB_ONLINE && drillSongs == null && drillPlaylist == null) scheduleOnlineSearch() else refresh()
             }
         })
         searchBox.setOnFocusChangeListener { _, has -> if (has) enterSearch() }
@@ -489,6 +510,40 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         hs.isHorizontalScrollBarEnabled = false
         hs.addView(strip)
         content.addView(hs, LinearLayout.LayoutParams(match, wrap))
+
+        // online categories (sirf Online tab par dikhte hain)
+        val chipStrip = LinearLayout(this)
+        chipStrip.orientation = LinearLayout.HORIZONTAL
+        chipStrip.setPadding(dp(16), 0, dp(8), dp(8))
+        val chips = ArrayList<TextView>()
+        for (i in JamendoManager.categories.indices) {
+            val tv = TextView(this)
+            tv.text = JamendoManager.categories[i]
+            tv.textSize = 13f
+            tv.gravity = Gravity.CENTER
+            tv.setPadding(dp(14), dp(6), dp(14), dp(6))
+            tv.setOnClickListener {
+                onlineCat = i
+                query = ""
+                searchBox.setText("")
+                onlineHandler.removeCallbacks(onlineDebounce)
+                fetchOnline()
+                styleChips()
+            }
+            Ui.pressable(tv)
+            val clp = LinearLayout.LayoutParams(wrap, wrap)
+            clp.rightMargin = dp(8)
+            chipStrip.addView(tv, clp)
+            chips.add(tv)
+        }
+        chipViews = chips
+        val chipScroll = HorizontalScrollView(this)
+        chipScroll.isHorizontalScrollBarEnabled = false
+        chipScroll.addView(chipStrip)
+        chipScroll.visibility = View.GONE
+        onlineChips = chipScroll
+        content.addView(chipScroll, LinearLayout.LayoutParams(match, wrap))
+        styleChips()
 
         // list
         rowAdapter = RowAdapter()
@@ -738,6 +793,8 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
 
     private fun selectTab(i: Int) {
         tab = i
+        searchBox.hint = if (i == TAB_ONLINE) "Search online music" else "Search songs, artists, albums"
+        if (i == TAB_ONLINE) maybeLoadOnline()
         clearDrill()
         lastAnimPos = -1
         refresh()
@@ -789,6 +846,109 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             refresh()
             listView.setSelection(0)
             swapAnim(true)
+        }
+    }
+
+    // ---------------- online (Jamendo) ----------------
+    private fun maybeLoadOnline() {
+        if (!onlineLoaded && SettingsManager.jamendoId.isNotBlank()) fetchOnline()
+    }
+
+    private fun scheduleOnlineSearch() {
+        onlineHandler.removeCallbacks(onlineDebounce)
+        onlineHandler.postDelayed(onlineDebounce, 700L)
+    }
+
+    private fun fetchOnline() {
+        val id = SettingsManager.jamendoId.trim()
+        if (id.isEmpty()) {
+            refresh()
+            return
+        }
+        onlineLoaded = true
+        val seq = ++onlineSeq
+        onlineStatus = "Dhoondh raha hoon..."
+        refresh()
+        JamendoManager.fetch(id, query.trim(), onlineCat) { list, err ->
+            if (seq == onlineSeq) {
+                if (list != null) {
+                    onlineResults = list
+                    onlineStatus = if (list.isEmpty()) "Kuch nahi mila. Doosra search ya category try karo." else ""
+                } else {
+                    onlineStatus = err ?: "Internet ya Client ID check karo"
+                }
+                refresh()
+            }
+        }
+    }
+
+    private fun styleChips() {
+        for (i in chipViews.indices) {
+            val tv = chipViews[i]
+            if (i == onlineCat) {
+                tv.background = Ui.roundRect(Theme.accent, dp(16).toFloat())
+                tv.setTextColor(Theme.onAccent)
+            } else {
+                tv.background = Ui.roundRect(Theme.card, dp(16).toFloat())
+                tv.setTextColor(Theme.accent)
+            }
+        }
+    }
+
+    private fun showOnlineMenu(s: Song) {
+        val labels = ArrayList<String>()
+        val acts = ArrayList<() -> Unit>()
+        fun item(l: String, a: () -> Unit) {
+            labels.add(l)
+            acts.add(a)
+        }
+        item("Play next") { AudioPlayerManager.playNext(s) }
+        item("Add to queue") { AudioPlayerManager.enqueue(s) }
+        if (s.downloadUrl != null && !DownloadsManager.isDownloaded(s.id)) {
+            item("Download (offline)") {
+                toast("Download shuru... internet data lagega")
+                DownloadsManager.download(this, s) { _, msg ->
+                    toast(msg)
+                    refresh()
+                }
+            }
+        }
+        dialog().setTitle(s.title).setItems(labels.toTypedArray()) { _, which -> acts[which]() }.show()
+    }
+
+    private fun showDownloadMenu(s: Song) {
+        val labels = arrayOf("Play next", "Add to queue", "Delete download")
+        dialog().setTitle(s.title).setItems(labels) { _, which ->
+            when (which) {
+                0 -> AudioPlayerManager.playNext(s)
+                1 -> AudioPlayerManager.enqueue(s)
+                else -> {
+                    DownloadsManager.delete(s.id)
+                    refresh()
+                }
+            }
+        }.show()
+    }
+
+    private fun autoFix(s: Song) {
+        toast("Sahi info dhoondh raha hoon...")
+        AutoFix.suggest(s) { list ->
+            if (list == null) {
+                toast("Internet check karo, abhi suggestion nahi mila")
+            } else if (list.isEmpty()) {
+                toast("Koi suggestion nahi mila")
+            } else {
+                val labels = Array(list.size) { i ->
+                    val x = list[i]
+                    x.title + " \u2014 " + x.artist + (if (x.album.isNotBlank()) " (" + x.album + ")" else "")
+                }
+                dialog().setTitle("Sahi info chuno (MusicBrainz)").setItems(labels) { _, which ->
+                    val x = list[which]
+                    MetadataManager.set(s.id, x.title, x.artist, if (x.album.isBlank()) s.album else x.album)
+                    scan()
+                    toast("Info update ho gayi")
+                }.setNegativeButton("Cancel", null).show()
+            }
         }
     }
 
@@ -910,6 +1070,14 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     }
 
     private fun showSongMenu(s: Song) {
+        if (s.source == 1) {
+            showOnlineMenu(s)
+            return
+        }
+        if (s.source == 2) {
+            showDownloadMenu(s)
+            return
+        }
         val labels = ArrayList<String>()
         val acts = ArrayList<() -> Unit>()
         fun item(l: String, a: () -> Unit) {
@@ -931,6 +1099,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             }
         }
         item("Edit info") { showEditInfo(s) }
+        item("Auto-fix info (online)") { autoFix(s) }
         dialog().setTitle(s.title).setItems(labels.toTypedArray()) { _, which -> acts[which]() }.show()
     }
 
@@ -969,6 +1138,21 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             return rows
         }
 
+        if (tab == TAB_ONLINE && noDrill) {
+            val rows = ArrayList<Row>()
+            if (onlineStatus.isNotEmpty()) rows.add(Row(onlineStatus, "hint", null, null, null, null, false, true))
+            for (sg in onlineResults) {
+                val dl = if (DownloadsManager.isDownloaded(sg.id)) " \u2022 Downloaded" else ""
+                rows.add(Row(sg.title, sg.artist + " \u2022 " + Ui.fmt(sg.durationMs) + " \u2022 Jamendo" + dl, sg, null, sg))
+            }
+            return rows
+        }
+        if (tab == TAB_DOWNLOADS && noDrill) {
+            val list = DownloadsManager.songs().filter {
+                q.isEmpty() || it.title.lowercase().contains(q) || it.artist.lowercase().contains(q)
+            }
+            return list.map { Row(it.title, it.artist + " \u2022 " + Ui.fmt(it.durationMs) + " \u2022 Downloaded", it, null, it) }
+        }
         if (tab == TAB_PLAYLISTS && noDrill) {
             val rows = ArrayList<Row>()
             rows.add(Row("New playlist", "Tap to create one", null, null, null, null, true))
@@ -997,9 +1181,9 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         }
         val rows = ArrayList<Row>()
         when (tab) {
-            2 -> for ((k, v) in filtered.groupBy { it.artist }) rows.add(Row(k, v.size.toString() + " songs", null, v, v[0]))
-            3 -> for (v in filtered.groupBy { it.albumId }.values) rows.add(Row(v[0].album, v[0].artist + " \u2022 " + v.size + " songs", null, v, v[0]))
-            4 -> for ((k, v) in filtered.groupBy { it.folder }) rows.add(Row(k.substringAfterLast('/').ifEmpty { "Root" }, v.size.toString() + " songs", null, v, v[0]))
+            4 -> for ((k, v) in filtered.groupBy { it.artist }) rows.add(Row(k, v.size.toString() + " songs", null, v, v[0]))
+            5 -> for (v in filtered.groupBy { it.albumId }.values) rows.add(Row(v[0].album, v[0].artist + " \u2022 " + v.size + " songs", null, v, v[0]))
+            6 -> for ((k, v) in filtered.groupBy { it.folder }) rows.add(Row(k.substringAfterLast('/').ifEmpty { "Root" }, v.size.toString() + " songs", null, v, v[0]))
         }
         rows.sortBy { it.title.lowercase() }
         return rows
@@ -1012,7 +1196,13 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         titleView.text = drillTitle ?: "Kasturi Music"
         backView.visibility = if (drillSongs != null || drillPlaylist != null) View.VISIBLE else View.GONE
         val homeMode = tab == TAB_HOME && drillSongs == null && drillPlaylist == null && query.trim().isEmpty()
+        val onlineTab = tab == TAB_ONLINE && drillSongs == null && drillPlaylist == null
+        val dlTab = tab == TAB_DOWNLOADS && drillSongs == null && drillPlaylist == null
         val msg: String? = when {
+            onlineTab && SettingsManager.jamendoId.isBlank() ->
+                "Online music ke liye Settings mein free Jamendo Client ID daalo.\n\nTap here"
+            onlineTab -> null
+            dlTab -> if (rows.isEmpty()) "Abhi koi download nahi hai.\n\nOnline tab se gaana download karo." else null
             !hasAudio() -> "Allow music access to see your songs.\n\nTap here"
             scanned && MusicRepository.songs.isEmpty() -> "No songs found on this phone.\n\nTap here to scan again"
             !homeMode && rows.isEmpty() -> "Nothing here yet"
@@ -1022,6 +1212,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         homeScroll.visibility = if (showHome) View.VISIBLE else View.GONE
         tabsScroll.visibility = if (homeMode) View.GONE else View.VISIBLE
         searchRowView.visibility = if (homeMode) View.GONE else View.VISIBLE
+        onlineChips.visibility = if (onlineTab && !SettingsManager.jamendoId.isBlank()) View.VISIBLE else View.GONE
         if (msg == null) {
             listView.visibility = if (showHome) View.GONE else View.VISIBLE
             emptyView.visibility = View.GONE

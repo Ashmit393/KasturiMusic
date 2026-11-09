@@ -21,6 +21,10 @@ object SettingsManager {
         get() = p.getBoolean("floating_player", false)
         set(v) { p.edit().putBoolean("floating_player", v).apply() }
 
+    var jamendoId: String
+        get() = p.getString("jamendo_id", "") ?: ""
+        set(v) { p.edit().putString("jamendo_id", v.trim()).apply() }
+
     var shake: Boolean
         get() = p.getBoolean("shake", false)
         set(v) { p.edit().putBoolean("shake", v).apply() }

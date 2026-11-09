@@ -156,6 +156,18 @@ class SettingsActivity : Activity() {
         sc.setOnClickListener { showEqualizer() }
         col.addView(sc, LinearLayout.LayoutParams(match, wrap))
 
+        // Online music
+        col.addView(label("ONLINE MUSIC"))
+        val oc = card()
+        oc.addView(settingRow("Jamendo Client ID", { idText() }) { sub -> showIdDialog(sub) })
+        val idHint = TextView(this)
+        idHint.text = "Free ID: developer.jamendo.com par account banao, app register karo aur Client ID yahan paste karo. Gaane Creative Commons licence ke hain."
+        idHint.textSize = 12f
+        idHint.setTextColor(Theme.sub)
+        idHint.setPadding(0, 0, 0, dp(8))
+        oc.addView(idHint)
+        col.addView(oc, LinearLayout.LayoutParams(match, wrap))
+
         // Playback
         col.addView(label("PLAYBACK"))
         val pc = card()
@@ -218,6 +230,33 @@ class SettingsActivity : Activity() {
         col.addView(abc, LinearLayout.LayoutParams(match, wrap))
 
         setContentView(scroll)
+    }
+
+    // ---------------- online music ----------------
+    private fun idText(): String {
+        val id = SettingsManager.jamendoId
+        return if (id.isBlank()) "Not set" else id.take(4) + "... (set)"
+    }
+
+    private fun showIdDialog(sub: TextView) {
+        val et = android.widget.EditText(this)
+        et.setText(SettingsManager.jamendoId)
+        et.hint = "Client ID paste karo"
+        et.isSingleLine = true
+        val box = android.widget.FrameLayout(this)
+        box.setPadding(dp(20), dp(8), dp(20), 0)
+        box.addView(et, ViewGroup.LayoutParams(match, wrap))
+        dialog().setTitle("Jamendo Client ID").setView(box)
+            .setPositiveButton("Save") { _, _ ->
+                SettingsManager.jamendoId = et.text.toString()
+                sub.text = idText()
+            }
+            .setNeutralButton("Clear") { _, _ ->
+                SettingsManager.jamendoId = ""
+                sub.text = idText()
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     // ---------------- playback settings ----------------

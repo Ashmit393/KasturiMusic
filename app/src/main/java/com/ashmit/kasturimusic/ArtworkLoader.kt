@@ -9,6 +9,9 @@ import android.os.Handler
 import android.os.Looper
 import android.util.LruCache
 import android.util.Size
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
 import java.util.Collections
 import java.util.concurrent.Executors
 
@@ -65,6 +68,7 @@ object ArtworkLoader {
     }
 
     private fun decode(ctx: Context, song: Song, px: Int): Bitmap? {
+        if (song.source != 0) return decodeRemote(song, px)
         if (Build.VERSION.SDK_INT >= 29) {
             try {
                 return ctx.contentResolver.loadThumbnail(song.uri, Size(px, px), null)
@@ -77,19 +81,46 @@ object ArtworkLoader {
             mmr = MediaMetadataRetriever()
             mmr.setDataSource(ctx, song.uri)
             val data = mmr.embeddedPicture ?: return null
-            val o = BitmapFactory.Options()
-            o.inJustDecodeBounds = true
-            BitmapFactory.decodeByteArray(data, 0, data.size, o)
-            var s = 1
-            while (o.outWidth / (s * 2) >= px && o.outHeight / (s * 2) >= px) s *= 2
-            val o2 = BitmapFactory.Options()
-            o2.inSampleSize = s
-            o2.inPreferredConfig = Bitmap.Config.RGB_565
-            return BitmapFactory.decodeByteArray(data, 0, data.size, o2)
+            return decodeBytes(data, px)
         } catch (e: Exception) {
             return null
         } finally {
             try { mmr?.release() } catch (e: Exception) { }
+        }
+    }
+
+    private fun decodeBytes(data: ByteArray, px: Int): Bitmap? {
+        val o = BitmapFactory.Options()
+        o.inJustDecodeBounds = true
+        BitmapFactory.decodeByteArray(data, 0, data.size, o)
+        var s = 1
+        while (o.outWidth / (s * 2) >= px && o.outHeight / (s * 2) >= px) s *= 2
+        val o2 = BitmapFactory.Options()
+        o2.inSampleSize = s
+        o2.inPreferredConfig = Bitmap.Config.RGB_565
+        return BitmapFactory.decodeByteArray(data, 0, data.size, o2)
+    }
+
+    /** Online gaane ka cover (URL) ya download kiye gaane ka cover (file). */
+    private fun decodeRemote(song: Song, px: Int): Bitmap? {
+        val u = song.artUrl ?: return null
+        try {
+            val data: ByteArray = if (u.startsWith("http")) {
+                val c = URL(u).openConnection() as HttpURLConnection
+                try {
+                    c.connectTimeout = 8000
+                    c.readTimeout = 10000
+                    if (c.responseCode != 200) return null
+                    c.inputStream.use { it.readBytes() }
+                } finally {
+                    c.disconnect()
+                }
+            } else {
+                File(u).readBytes()
+            }
+            return decodeBytes(data, px)
+        } catch (e: Exception) {
+            return null
         }
     }
 }
