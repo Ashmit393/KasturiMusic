@@ -29,6 +29,7 @@ class LyricsPanel(
     private var lyrics: Lyrics? = null
     private var current = -1
     private var lastTouch = 0L
+    private var big = false
 
     private val cMid = Color.argb(160, 255, 255, 255)
     private val cDim = Color.argb(85, 255, 255, 255)
@@ -110,6 +111,16 @@ class LyricsPanel(
         adapter.notifyDataSetChanged()
     }
 
+    /** Full-screen lyrics: lines badi ho jaati hain. */
+    fun setBig(b: Boolean) {
+        if (b == big) return
+        big = b
+        adapter.notifyDataSetChanged()
+        list.postDelayed({
+            if (current >= 0) list.smoothScrollToPositionFromTop(current + 1, list.height / 3, 300)
+        }, 380L)
+    }
+
     /** Har 250ms par call hota hai. */
     fun tick(posMs: Int) {
         val l = lyrics ?: return
@@ -140,15 +151,15 @@ class LyricsPanel(
             val l = lyrics ?: return tv
             tv.text = l.lines[position]
             if (!l.synced) {
-                tv.textSize = 18f
+                tv.textSize = if (big) 22f else 18f
                 tv.setTextColor(cPlain)
                 tv.setShadowLayer(0f, 0f, 0f, 0)
             } else if (position == current) {
-                tv.textSize = 26f
+                tv.textSize = if (big) 34f else 26f
                 tv.setTextColor(Color.WHITE)
                 tv.setShadowLayer(dp(12).toFloat(), 0f, 0f, cGlow)
             } else {
-                tv.textSize = 22f
+                tv.textSize = if (big) 28f else 22f
                 tv.setTextColor(if (Math.abs(position - current) == 1) cMid else cDim)
                 tv.setShadowLayer(0f, 0f, 0f, 0)
             }

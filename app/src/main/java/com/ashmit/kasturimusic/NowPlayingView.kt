@@ -1,6 +1,7 @@
 package com.ashmit.kasturimusic
 
 import android.animation.Animator
+import android.animation.LayoutTransition
 import android.animation.AnimatorListenerAdapter
 import android.animation.TimeInterpolator
 import android.animation.ValueAnimator
@@ -39,6 +40,10 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
     private var blurId = -1L
     private var artScaleTarget = 1f
     private val timerBtn = TextView(ctx)
+    private val labelView = TextView(ctx)
+    private val volRow = LinearLayout(ctx)
+    private var fullLyrics = false
+    private val fullRunnable = Runnable { if (lyricsMode && isOpen) setFullLyrics(true) }
     private var anim: ValueAnimator? = null
     private var progress = 0f
     var onProgress: ((Float) -> Unit)? = null
@@ -90,6 +95,29 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
     val isOpen: Boolean
         get() = visibility == View.VISIBLE
 
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.action == MotionEvent.ACTION_DOWN) armFull()
+        return super.dispatchTouchEvent(ev)
+    }
+
+    /** Lyrics par 4 second kuch na chhuo to lyrics full-screen ho jaate hain. */
+    private fun armFull() {
+        handler.removeCallbacks(fullRunnable)
+        if (lyricsMode && !fullLyrics && isOpen) handler.postDelayed(fullRunnable, 4000L)
+    }
+
+    private fun setFullLyrics(on: Boolean) {
+        if (on == fullLyrics) return
+        fullLyrics = on
+        val vis = if (on) View.GONE else View.VISIBLE
+        titleView.visibility = vis
+        artistView.visibility = vis
+        volRow.visibility = vis
+        labelView.text = if (on) (AudioPlayerManager.current?.title ?: "") else "NOW PLAYING"
+        lyricsPanel.setBig(on)
+        if (!on) armFull()
+    }
+
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         swipe.onTouchEvent(ev)
         return super.onInterceptTouchEvent(ev)
@@ -122,6 +150,7 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         col.orientation = LinearLayout.VERTICAL
         col.gravity = Gravity.CENTER_HORIZONTAL
         col.setPadding(dp(24), dp(8), dp(24), dp(12))
+        col.layoutTransition = LayoutTransition()
         addView(col, FrameLayout.LayoutParams(match, match))
 
         // top bar
@@ -131,8 +160,11 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         val close = Ui.iconButton(context, R.drawable.ic_chevron_down, Ui.SILVER, 8)
         close.setOnClickListener { onClose() }
         top.addView(close, LinearLayout.LayoutParams(dp(48), dp(48)))
-        val label = TextView(context)
+        val label = labelView
         label.text = "NOW PLAYING"
+        label.isSingleLine = true
+        label.ellipsize = TextUtils.TruncateAt.END
+        label.setOnClickListener { if (fullLyrics) setFullLyrics(false) }
         label.textSize = 12f
         label.setTextColor(Ui.DIM)
         label.gravity = Gravity.CENTER
@@ -250,7 +282,7 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
             override fun onStartTrackingTouch(sb: SeekBar) { volDragging = true }
             override fun onStopTrackingTouch(sb: SeekBar) { volDragging = false }
         })
-        val vol = LinearLayout(context)
+        val vol = volRow
         vol.orientation = LinearLayout.HORIZONTAL
         vol.gravity = Gravity.CENTER_VERTICAL
         val volLow = ImageView(context)
@@ -357,7 +389,13 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         lyricsPanel.visibility = if (lyricsMode) View.VISIBLE else View.GONE
         lyricsBtn.setTextColor(if (lyricsMode) Color.WHITE else Ui.SILVER)
         lyricsBtn.setTypeface(null, if (lyricsMode) Typeface.BOLD else Typeface.NORMAL)
-        if (lyricsMode) loadLyrics()
+        if (lyricsMode) {
+            loadLyrics()
+            armFull()
+        } else {
+            handler.removeCallbacks(fullRunnable)
+            setFullLyrics(false)
+        }
     }
 
     private fun loadLyrics() {
@@ -479,10 +517,13 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         refresh()
         animateTo(1f, 460L, DecelerateInterpolator(1.9f), null)
         handler.post(ticker)
+        armFull()
     }
 
     fun hide() {
         handler.removeCallbacks(ticker)
+        handler.removeCallbacks(fullRunnable)
+        setFullLyrics(false)
         animateTo(0f, 320L, AccelerateInterpolator(1.3f)) { visibility = View.GONE }
     }
 
