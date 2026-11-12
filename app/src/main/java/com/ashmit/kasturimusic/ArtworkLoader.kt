@@ -71,7 +71,8 @@ object ArtworkLoader {
         if (song.source != 0) return decodeRemote(song, px)
         if (Build.VERSION.SDK_INT >= 29) {
             try {
-                return ctx.contentResolver.loadThumbnail(song.uri, Size(px, px), null)
+                val t = ctx.contentResolver.loadThumbnail(song.uri, Size(px, px), null)
+                return if (t.config == Bitmap.Config.HARDWARE) t.copy(Bitmap.Config.ARGB_8888, false) else t
             } catch (e: Exception) {
                 // thumbnail nahi mila, embedded art try karenge
             }

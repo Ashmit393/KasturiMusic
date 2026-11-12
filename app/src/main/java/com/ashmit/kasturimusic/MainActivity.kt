@@ -46,11 +46,9 @@ import android.widget.Toast
 
 private const val TAB_HOME = 0
 private const val TAB_SONGS = 1
-private const val TAB_ONLINE = 2
-private const val TAB_DOWNLOADS = 3
-private const val TAB_PLAYLISTS = 7
-private const val TAB_FAV = 8
-private const val TAB_RECENT = 9
+private const val TAB_PLAYLISTS = 5
+private const val TAB_FAV = 6
+private const val TAB_RECENT = 7
 
 private class Row(
     val title: String,
@@ -99,7 +97,7 @@ private class RowHolder(ctx: Context) {
 class MainActivity : Activity(), AudioPlayerManager.Listener {
 
     private val tabNames = arrayOf(
-        "Home", "Local", "Online", "Downloads", "Artists", "Albums", "Folders", "Playlists", "Favourites", "Recent"
+        "Home", "Songs", "Artists", "Albums", "Folders", "Playlists", "Favourites", "Recent"
     )
     private var tab = TAB_HOME
     private var query = ""
@@ -154,15 +152,9 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     private var homeHero: View? = null
     private var homeKey = ""
     private var scanCount = 0
-    private var onlineResults: List<Song> = emptyList()
-    private var onlineStatus = ""
-    private var onlineCat = 0
-    private var onlineSeq = 0
-    private var onlineLoaded = false
-    private val onlineHandler = Handler(Looper.getMainLooper())
-    private val onlineDebounce = Runnable { fetchOnline() }
-    private lateinit var onlineChips: HorizontalScrollView
-    private var chipViews: List<TextView> = emptyList()
+    private var appliedGlass = false
+    private lateinit var photoFrame: PhotoFrame
+    private lateinit var backdropView: View
     private val navItems = ArrayList<LinearLayout>()
     private val navIcons = ArrayList<ImageView>()
     private val navLabels = ArrayList<TextView>()
@@ -174,6 +166,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         super.onCreate(savedInstanceState)
         AudioPlayerManager.init(this)
         appliedTheme = SettingsManager.theme
+        appliedGlass = SettingsManager.liquidGlass
         volumeControlStream = android.media.AudioManager.STREAM_MUSIC
         buildUi()
         Theme.applyBars(window)
@@ -189,10 +182,11 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     override fun onStart() {
         super.onStart()
         AudioPlayerManager.activityStarted()
-        if (SettingsManager.theme != appliedTheme) {
+        if (SettingsManager.theme != appliedTheme || SettingsManager.liquidGlass != appliedGlass) {
             recreate()
             return
         }
+        photoFrame.refresh()
         stopService(Intent(this, FloatingPlayerService::class.java))
         AudioPlayerManager.addListener(this)
         onChanged()
@@ -223,7 +217,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
         if (nowPlaying.isOpen) {
-            nowPlaying.hide()
+            if (!nowPlaying.closeQueue()) nowPlaying.hide()
         } else if (searching) {
             exitSearch()
         } else if (drillSongs != null || drillPlaylist != null) {
@@ -252,14 +246,6 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         checkSelfPermission(audioPermission()) == PackageManager.PERMISSION_GRANTED
 
     private fun onEmptyClick() {
-        if (tab == TAB_ONLINE && SettingsManager.jamendoId.isBlank()) {
-            startActivity(Intent(this, SettingsActivity::class.java))
-            return
-        }
-        if (tab == TAB_DOWNLOADS) {
-            selectTab(TAB_ONLINE)
-            return
-        }
         if (!hasAudio()) {
             if (askedPermission && !shouldShowRequestPermissionRationale(audioPermission())) {
                 val i = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName"))
@@ -467,7 +453,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
             override fun afterTextChanged(s: Editable?) {
                 query = s?.toString() ?: ""
-                if (tab == TAB_ONLINE && drillSongs == null && drillPlaylist == null) scheduleOnlineSearch() else refresh()
+                refresh()
             }
         })
         searchBox.setOnFocusChangeListener { _, has -> if (has) enterSearch() }
@@ -498,6 +484,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             tv.gravity = Gravity.CENTER
             tv.setPadding(dp(16), dp(8), dp(16), dp(8))
             tv.setOnClickListener { selectTab(i) }
+            if (i == TAB_HOME) tv.visibility = View.GONE
             Ui.pressable(tv)
             val lp = LinearLayout.LayoutParams(wrap, wrap)
             lp.rightMargin = dp(8)
@@ -510,40 +497,6 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         hs.isHorizontalScrollBarEnabled = false
         hs.addView(strip)
         content.addView(hs, LinearLayout.LayoutParams(match, wrap))
-
-        // online categories (sirf Online tab par dikhte hain)
-        val chipStrip = LinearLayout(this)
-        chipStrip.orientation = LinearLayout.HORIZONTAL
-        chipStrip.setPadding(dp(16), 0, dp(8), dp(8))
-        val chips = ArrayList<TextView>()
-        for (i in JamendoManager.categories.indices) {
-            val tv = TextView(this)
-            tv.text = JamendoManager.categories[i]
-            tv.textSize = 13f
-            tv.gravity = Gravity.CENTER
-            tv.setPadding(dp(14), dp(6), dp(14), dp(6))
-            tv.setOnClickListener {
-                onlineCat = i
-                query = ""
-                searchBox.setText("")
-                onlineHandler.removeCallbacks(onlineDebounce)
-                fetchOnline()
-                styleChips()
-            }
-            Ui.pressable(tv)
-            val clp = LinearLayout.LayoutParams(wrap, wrap)
-            clp.rightMargin = dp(8)
-            chipStrip.addView(tv, clp)
-            chips.add(tv)
-        }
-        chipViews = chips
-        val chipScroll = HorizontalScrollView(this)
-        chipScroll.isHorizontalScrollBarEnabled = false
-        chipScroll.addView(chipStrip)
-        chipScroll.visibility = View.GONE
-        onlineChips = chipScroll
-        content.addView(chipScroll, LinearLayout.LayoutParams(match, wrap))
-        styleChips()
 
         // list
         rowAdapter = RowAdapter()
@@ -636,7 +589,10 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         }
         content.addView(homeScroll, LinearLayout.LayoutParams(match, 0, 1f))
 
-        root.addView(content, FrameLayout.LayoutParams(match, match))
+        val backdrop = PhotoFrame(this, content)
+        photoFrame = backdrop
+        backdropView = backdrop
+        root.addView(backdrop, FrameLayout.LayoutParams(match, match))
 
         // mini player (glass, hamesha dark)
         mini = LinearLayout(this)
@@ -692,6 +648,14 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         scrim.setBackgroundColor(Color.argb(110, 0, 0, 0))
         miniCard.addView(scrim, FrameLayout.LayoutParams(match, match))
         miniCard.addView(mini, FrameLayout.LayoutParams(match, match))
+        if (SettingsManager.liquidGlass) {
+            miniBlur.visibility = View.GONE
+            scrim.visibility = View.GONE
+            miniCard.addView(
+                GlassBlurView(this, backdrop, Color.argb(95, 18, 18, 22)), 0,
+                FrameLayout.LayoutParams(match, match)
+            )
+        }
         val edge = View(this)
         edgeDrawable.setColor(Color.TRANSPARENT)
         edgeDrawable.cornerRadius = dp(18).toFloat()
@@ -793,8 +757,6 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
 
     private fun selectTab(i: Int) {
         tab = i
-        searchBox.hint = if (i == TAB_ONLINE) "Search online music" else "Search songs, artists, albums"
-        if (i == TAB_ONLINE) maybeLoadOnline()
         clearDrill()
         lastAnimPos = -1
         refresh()
@@ -847,87 +809,6 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             listView.setSelection(0)
             swapAnim(true)
         }
-    }
-
-    // ---------------- online (Jamendo) ----------------
-    private fun maybeLoadOnline() {
-        if (!onlineLoaded && SettingsManager.jamendoId.isNotBlank()) fetchOnline()
-    }
-
-    private fun scheduleOnlineSearch() {
-        onlineHandler.removeCallbacks(onlineDebounce)
-        onlineHandler.postDelayed(onlineDebounce, 700L)
-    }
-
-    private fun fetchOnline() {
-        val id = SettingsManager.jamendoId.trim()
-        if (id.isEmpty()) {
-            refresh()
-            return
-        }
-        onlineLoaded = true
-        val seq = ++onlineSeq
-        onlineStatus = "Dhoondh raha hoon..."
-        refresh()
-        JamendoManager.fetch(id, query.trim(), onlineCat) { list, err ->
-            if (seq == onlineSeq) {
-                if (list != null) {
-                    onlineResults = list
-                    onlineStatus = if (list.isEmpty()) "Kuch nahi mila. Doosra search ya category try karo." else ""
-                } else {
-                    onlineStatus = err ?: "Internet ya Client ID check karo"
-                }
-                refresh()
-            }
-        }
-    }
-
-    private fun styleChips() {
-        for (i in chipViews.indices) {
-            val tv = chipViews[i]
-            if (i == onlineCat) {
-                tv.background = Ui.roundRect(Theme.accent, dp(16).toFloat())
-                tv.setTextColor(Theme.onAccent)
-            } else {
-                tv.background = Ui.roundRect(Theme.card, dp(16).toFloat())
-                tv.setTextColor(Theme.accent)
-            }
-        }
-    }
-
-    private fun showOnlineMenu(s: Song) {
-        val labels = ArrayList<String>()
-        val acts = ArrayList<() -> Unit>()
-        fun item(l: String, a: () -> Unit) {
-            labels.add(l)
-            acts.add(a)
-        }
-        item("Play next") { AudioPlayerManager.playNext(s) }
-        item("Add to queue") { AudioPlayerManager.enqueue(s) }
-        if (s.downloadUrl != null && !DownloadsManager.isDownloaded(s.id)) {
-            item("Download (offline)") {
-                toast("Download shuru... internet data lagega")
-                DownloadsManager.download(this, s) { _, msg ->
-                    toast(msg)
-                    refresh()
-                }
-            }
-        }
-        dialog().setTitle(s.title).setItems(labels.toTypedArray()) { _, which -> acts[which]() }.show()
-    }
-
-    private fun showDownloadMenu(s: Song) {
-        val labels = arrayOf("Play next", "Add to queue", "Delete download")
-        dialog().setTitle(s.title).setItems(labels) { _, which ->
-            when (which) {
-                0 -> AudioPlayerManager.playNext(s)
-                1 -> AudioPlayerManager.enqueue(s)
-                else -> {
-                    DownloadsManager.delete(s.id)
-                    refresh()
-                }
-            }
-        }.show()
     }
 
     private fun autoFix(s: Song) {
@@ -1070,14 +951,6 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     }
 
     private fun showSongMenu(s: Song) {
-        if (s.source == 1) {
-            showOnlineMenu(s)
-            return
-        }
-        if (s.source == 2) {
-            showDownloadMenu(s)
-            return
-        }
         val labels = ArrayList<String>()
         val acts = ArrayList<() -> Unit>()
         fun item(l: String, a: () -> Unit) {
@@ -1138,21 +1011,6 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             return rows
         }
 
-        if (tab == TAB_ONLINE && noDrill) {
-            val rows = ArrayList<Row>()
-            if (onlineStatus.isNotEmpty()) rows.add(Row(onlineStatus, "hint", null, null, null, null, false, true))
-            for (sg in onlineResults) {
-                val dl = if (DownloadsManager.isDownloaded(sg.id)) " \u2022 Downloaded" else ""
-                rows.add(Row(sg.title, sg.artist + " \u2022 " + Ui.fmt(sg.durationMs) + " \u2022 Jamendo" + dl, sg, null, sg))
-            }
-            return rows
-        }
-        if (tab == TAB_DOWNLOADS && noDrill) {
-            val list = DownloadsManager.songs().filter {
-                q.isEmpty() || it.title.lowercase().contains(q) || it.artist.lowercase().contains(q)
-            }
-            return list.map { Row(it.title, it.artist + " \u2022 " + Ui.fmt(it.durationMs) + " \u2022 Downloaded", it, null, it) }
-        }
         if (tab == TAB_PLAYLISTS && noDrill) {
             val rows = ArrayList<Row>()
             rows.add(Row("New playlist", "Tap to create one", null, null, null, null, true))
@@ -1181,9 +1039,9 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         }
         val rows = ArrayList<Row>()
         when (tab) {
-            4 -> for ((k, v) in filtered.groupBy { it.artist }) rows.add(Row(k, v.size.toString() + " songs", null, v, v[0]))
-            5 -> for (v in filtered.groupBy { it.albumId }.values) rows.add(Row(v[0].album, v[0].artist + " \u2022 " + v.size + " songs", null, v, v[0]))
-            6 -> for ((k, v) in filtered.groupBy { it.folder }) rows.add(Row(k.substringAfterLast('/').ifEmpty { "Root" }, v.size.toString() + " songs", null, v, v[0]))
+            2 -> for ((k, v) in filtered.groupBy { it.artist }) rows.add(Row(k, v.size.toString() + " songs", null, v, v[0]))
+            3 -> for (v in filtered.groupBy { it.albumId }.values) rows.add(Row(v[0].album, v[0].artist + " \u2022 " + v.size + " songs", null, v, v[0]))
+            4 -> for ((k, v) in filtered.groupBy { it.folder }) rows.add(Row(k.substringAfterLast('/').ifEmpty { "Root" }, v.size.toString() + " songs", null, v, v[0]))
         }
         rows.sortBy { it.title.lowercase() }
         return rows
@@ -1196,13 +1054,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         titleView.text = drillTitle ?: "Kasturi Music"
         backView.visibility = if (drillSongs != null || drillPlaylist != null) View.VISIBLE else View.GONE
         val homeMode = tab == TAB_HOME && drillSongs == null && drillPlaylist == null && query.trim().isEmpty()
-        val onlineTab = tab == TAB_ONLINE && drillSongs == null && drillPlaylist == null
-        val dlTab = tab == TAB_DOWNLOADS && drillSongs == null && drillPlaylist == null
         val msg: String? = when {
-            onlineTab && SettingsManager.jamendoId.isBlank() ->
-                "Online music ke liye Settings mein free Jamendo Client ID daalo.\n\nTap here"
-            onlineTab -> null
-            dlTab -> if (rows.isEmpty()) "Abhi koi download nahi hai.\n\nOnline tab se gaana download karo." else null
             !hasAudio() -> "Allow music access to see your songs.\n\nTap here"
             scanned && MusicRepository.songs.isEmpty() -> "No songs found on this phone.\n\nTap here to scan again"
             !homeMode && rows.isEmpty() -> "Nothing here yet"
@@ -1212,7 +1064,6 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         homeScroll.visibility = if (showHome) View.VISIBLE else View.GONE
         tabsScroll.visibility = if (homeMode) View.GONE else View.VISIBLE
         searchRowView.visibility = if (homeMode) View.GONE else View.VISIBLE
-        onlineChips.visibility = if (onlineTab && !SettingsManager.jamendoId.isBlank()) View.VISIBLE else View.GONE
         if (msg == null) {
             listView.visibility = if (showHome) View.GONE else View.VISIBLE
             emptyView.visibility = View.GONE
@@ -1231,7 +1082,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         pill.orientation = LinearLayout.HORIZONTAL
         pill.gravity = Gravity.CENTER
         val g = GradientDrawable()
-        g.setColor(Color.argb(245, 26, 26, 28))
+        g.setColor(if (SettingsManager.liquidGlass) Color.TRANSPARENT else Color.argb(245, 26, 26, 28))
         g.cornerRadius = dp(30).toFloat()
         g.setStroke(dp(1), Color.argb(50, 255, 255, 255))
         pill.background = g
@@ -1262,7 +1113,17 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         val lp = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(64))
         lp.gravity = Gravity.BOTTOM
         lp.setMargins(dp(24), 0, dp(24), dp(14))
-        root.addView(pill, lp)
+        val card = FrameLayout(this)
+        card.outlineProvider = RoundOutline(dp(30).toFloat())
+        card.clipToOutline = true
+        if (SettingsManager.liquidGlass) {
+            card.addView(
+                GlassBlurView(this, backdropView, Color.argb(120, 18, 18, 22)),
+                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            )
+        }
+        card.addView(pill, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        root.addView(card, lp)
     }
 
     private fun onNavClick(i: Int) {
@@ -1302,12 +1163,114 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         val most = MusicRepository.mostPlayed().take(12)
         val favs = MusicRepository.favSongs().take(12)
         val all = MusicRepository.songs
-        val key = recents.joinToString(",") { it.id.toString() } + "|" +
+        val key = MusicRepository.totalPlays().toString() + "|" + recents.joinToString(",") { it.id.toString() } + "|" +
             most.joinToString(",") { it.id.toString() } + "|" +
             favs.joinToString(",") { it.id.toString() } + "|" + all.size + "|" + scanCount + "|" + appliedTheme
         if (key == homeKey) return
         homeKey = key
         buildHome(recents, most, favs, all)
+    }
+
+    private fun listenText(ms: Long): String {
+        val min = ms / 60000L
+        return if (min >= 60) (min / 60).toString() + "h " + (min % 60).toString() + "m" else min.toString() + "m"
+    }
+
+    /** Home par: kitne gaane bajaye, kitne alag gaane, kitna suna. */
+    private fun addStatsTiles() {
+        val row = LinearLayout(this)
+        row.orientation = LinearLayout.HORIZONTAL
+        row.setPadding(dp(16), dp(16), dp(16), 0)
+        fun tile(value: String, label: String, last: Boolean) {
+            val t = LinearLayout(this)
+            t.orientation = LinearLayout.VERTICAL
+            t.gravity = Gravity.CENTER
+            t.background = Ui.roundRect(Theme.card, dp(18).toFloat())
+            t.setPadding(dp(8), dp(14), dp(8), dp(14))
+            val v = TextView(this)
+            v.text = value
+            v.textSize = 22f
+            v.setTypeface(null, Typeface.BOLD)
+            v.setTextColor(Theme.text)
+            v.gravity = Gravity.CENTER
+            val l = TextView(this)
+            l.text = label
+            l.textSize = 11f
+            l.setTextColor(Theme.sub)
+            l.gravity = Gravity.CENTER
+            t.addView(v)
+            t.addView(l)
+            val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            if (!last) lp.rightMargin = dp(10)
+            row.addView(t, lp)
+        }
+        tile(MusicRepository.totalPlays().toString(), "plays", false)
+        tile(MusicRepository.uniquePlayed().toString(), "songs played", false)
+        tile(listenText(MusicRepository.listenMs()), "listened (approx)", true)
+        homeBox.addView(row)
+    }
+
+    /** Most played: kaun sa gaana kitni baar suna. */
+    private fun addTopList() {
+        val top = MusicRepository.topPlayed(8)
+        if (top.isEmpty()) return
+        val label = TextView(this)
+        label.text = "Most played"
+        label.textSize = 20f
+        label.setTypeface(null, Typeface.BOLD)
+        label.setTextColor(Theme.text)
+        label.setPadding(dp(20), dp(24), dp(20), dp(8))
+        homeBox.addView(label)
+        val songs = top.map { it.first }
+        for (i in top.indices) {
+            val sg = top[i].first
+            val n = top[i].second
+            val row = LinearLayout(this)
+            row.orientation = LinearLayout.HORIZONTAL
+            row.gravity = Gravity.CENTER_VERTICAL
+            row.setPadding(dp(20), dp(6), dp(20), dp(6))
+            val rank = TextView(this)
+            rank.text = (i + 1).toString()
+            rank.textSize = 16f
+            rank.setTypeface(null, Typeface.BOLD)
+            rank.setTextColor(if (i < 3) Theme.accent else Theme.sub)
+            rank.gravity = Gravity.CENTER
+            row.addView(rank, LinearLayout.LayoutParams(dp(28), ViewGroup.LayoutParams.WRAP_CONTENT))
+            val art = ImageView(this)
+            art.setBackgroundColor(Theme.card)
+            Ui.round(art, dp(8).toFloat())
+            Ui.bindArt(art, sg, 120, 10)
+            val alp = LinearLayout.LayoutParams(dp(46), dp(46))
+            alp.leftMargin = dp(8)
+            row.addView(art, alp)
+            val col = LinearLayout(this)
+            col.orientation = LinearLayout.VERTICAL
+            val tt = TextView(this)
+            tt.text = sg.title
+            tt.textSize = 15f
+            tt.setTextColor(Theme.text)
+            tt.isSingleLine = true
+            tt.ellipsize = TextUtils.TruncateAt.END
+            val aa = TextView(this)
+            aa.text = sg.artist
+            aa.textSize = 12f
+            aa.setTextColor(Theme.sub)
+            aa.isSingleLine = true
+            aa.ellipsize = TextUtils.TruncateAt.END
+            col.addView(tt)
+            col.addView(aa)
+            val clp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
+            clp.leftMargin = dp(12)
+            row.addView(col, clp)
+            val cnt = TextView(this)
+            cnt.text = if (n == 1) "1 play" else "$n plays"
+            cnt.textSize = 12f
+            cnt.setTextColor(Theme.accent)
+            row.addView(cnt)
+            row.setOnClickListener { AudioPlayerManager.playQueue(songs, i) }
+            Ui.pressable(row)
+            homeBox.addView(row)
+        }
     }
 
     private fun buildHome(recents: List<Song>, most: List<Song>, favs: List<Song>, all: List<Song>) {
@@ -1395,6 +1358,8 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         hero.animate().alpha(1f).translationY(0f).setDuration(420)
             .setInterpolator(DecelerateInterpolator(1.8f)).start()
 
+        addStatsTiles()
+
         // ---- carousels ----
         fun carousel(title: String, list: List<Song>) {
             if (list.isEmpty()) return
@@ -1444,7 +1409,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             homeBox.addView(hs, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
         }
         carousel("Recently played", recents)
-        carousel("Most played", most)
+        addTopList()
         carousel("Favourites", favs)
         if (recents.isEmpty() && most.isEmpty() && favs.isEmpty()) carousel("Songs", all.take(20))
 

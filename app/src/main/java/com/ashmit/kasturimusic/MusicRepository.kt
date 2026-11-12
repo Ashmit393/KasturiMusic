@@ -52,6 +52,31 @@ object MusicRepository {
         p.edit().putString("plays", plays.entries.joinToString(",") { it.key.toString() + ":" + it.value }).apply()
     }
 
+    fun totalPlays(): Int = plays.values.sum()
+
+    fun uniquePlayed(): Int = plays.size
+
+    /** Approx: har play = poore gaane ki length (skip kiye gaane bhi gin liye jaate hain). */
+    fun listenMs(): Long {
+        val map = songs.associateBy { it.id }
+        var t = 0L
+        for ((id, n) in plays) {
+            val s = map[id]
+            if (s != null) t += s.durationMs * n
+        }
+        return t
+    }
+
+    fun topPlayed(limit: Int): List<Pair<Song, Int>> {
+        val map = songs.associateBy { it.id }
+        return plays.entries.sortedByDescending { it.value }
+            .mapNotNull { e ->
+                val s = map[e.key]
+                if (s == null) null else Pair(s, e.value)
+            }
+            .take(limit)
+    }
+
     fun mostPlayed(): List<Song> {
         val map = songs.associateBy { it.id }
         return plays.entries.sortedByDescending { it.value }.mapNotNull { map[it.key] }

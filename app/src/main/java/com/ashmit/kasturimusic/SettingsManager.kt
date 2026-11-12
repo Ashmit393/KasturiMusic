@@ -21,9 +21,19 @@ object SettingsManager {
         get() = p.getBoolean("floating_player", false)
         set(v) { p.edit().putBoolean("floating_player", v).apply() }
 
-    var jamendoId: String
-        get() = p.getString("jamendo_id", "") ?: ""
-        set(v) { p.edit().putString("jamendo_id", v.trim()).apply() }
+    /** Background photo ka blur (0-100) aur dimming (0-100) */
+    var bgBlur: Int
+        get() = p.getInt("bg_blur", 60)
+        set(v) { p.edit().putInt("bg_blur", v).apply() }
+
+    var bgDim: Int
+        get() = p.getInt("bg_dim", 40)
+        set(v) { p.edit().putInt("bg_dim", v).apply() }
+
+    /** Nav bar aur mini player par live glass blur */
+    var liquidGlass: Boolean
+        get() = p.getBoolean("liquid_glass", true)
+        set(v) { p.edit().putBoolean("liquid_glass", v).apply() }
 
     var shake: Boolean
         get() = p.getBoolean("shake", false)

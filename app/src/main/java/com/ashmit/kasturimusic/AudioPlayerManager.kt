@@ -136,7 +136,6 @@ object AudioPlayerManager {
         MetadataManager.init(app)
         PlaylistManager.init(app)
         EqualizerManager.init(app)
-        DownloadsManager.init(app)
         shuffle = SettingsManager.shuffle
         repeat = SettingsManager.repeat
     }

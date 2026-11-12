@@ -1,7 +1,6 @@
 package com.ashmit.kasturimusic
 
 import android.animation.Animator
-import android.animation.LayoutTransition
 import android.animation.AnimatorListenerAdapter
 import android.animation.TimeInterpolator
 import android.animation.ValueAnimator
@@ -40,10 +39,7 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
     private var blurId = -1L
     private var artScaleTarget = 1f
     private val timerBtn = TextView(ctx)
-    private val labelView = TextView(ctx)
-    private val volRow = LinearLayout(ctx)
-    private var fullLyrics = false
-    private val fullRunnable = Runnable { if (lyricsMode && isOpen) setFullLyrics(true) }
+    private val queueSheet = QueueSheet(ctx)
     private var anim: ValueAnimator? = null
     private var progress = 0f
     var onProgress: ((Float) -> Unit)? = null
@@ -95,28 +91,8 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
     val isOpen: Boolean
         get() = visibility == View.VISIBLE
 
-    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
-        if (ev.action == MotionEvent.ACTION_DOWN) armFull()
-        return super.dispatchTouchEvent(ev)
-    }
-
-    /** Lyrics par 4 second kuch na chhuo to lyrics full-screen ho jaate hain. */
-    private fun armFull() {
-        handler.removeCallbacks(fullRunnable)
-        if (lyricsMode && !fullLyrics && isOpen) handler.postDelayed(fullRunnable, 4000L)
-    }
-
-    private fun setFullLyrics(on: Boolean) {
-        if (on == fullLyrics) return
-        fullLyrics = on
-        val vis = if (on) View.GONE else View.VISIBLE
-        titleView.visibility = vis
-        artistView.visibility = vis
-        volRow.visibility = vis
-        labelView.text = if (on) (AudioPlayerManager.current?.title ?: "") else "NOW PLAYING"
-        lyricsPanel.setBig(on)
-        if (!on) armFull()
-    }
+    /** true = queue khula tha aur band ho gaya (back dabane par pehle queue band hoti hai). */
+    fun closeQueue(): Boolean = queueSheet.close()
 
     override fun onInterceptTouchEvent(ev: MotionEvent): Boolean {
         swipe.onTouchEvent(ev)
@@ -150,7 +126,6 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         col.orientation = LinearLayout.VERTICAL
         col.gravity = Gravity.CENTER_HORIZONTAL
         col.setPadding(dp(24), dp(8), dp(24), dp(12))
-        col.layoutTransition = LayoutTransition()
         addView(col, FrameLayout.LayoutParams(match, match))
 
         // top bar
@@ -160,11 +135,8 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         val close = Ui.iconButton(context, R.drawable.ic_chevron_down, Ui.SILVER, 8)
         close.setOnClickListener { onClose() }
         top.addView(close, LinearLayout.LayoutParams(dp(48), dp(48)))
-        val label = labelView
+        val label = TextView(context)
         label.text = "NOW PLAYING"
-        label.isSingleLine = true
-        label.ellipsize = TextUtils.TruncateAt.END
-        label.setOnClickListener { if (fullLyrics) setFullLyrics(false) }
         label.textSize = 12f
         label.setTextColor(Ui.DIM)
         label.gravity = Gravity.CENTER
@@ -282,7 +254,7 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
             override fun onStartTrackingTouch(sb: SeekBar) { volDragging = true }
             override fun onStopTrackingTouch(sb: SeekBar) { volDragging = false }
         })
-        val vol = volRow
+        val vol = LinearLayout(context)
         vol.orientation = LinearLayout.HORIZONTAL
         vol.gravity = Gravity.CENTER_VERTICAL
         val volLow = ImageView(context)
@@ -329,10 +301,11 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
             }
         }
         lyricsBtn.setOnClickListener { toggleLyrics() }
-        queueBtn.setOnClickListener { showQueue() }
+        queueBtn.setOnClickListener { queueSheet.open() }
         for (v in listOf<View>(playBtn, prevBtn, nextBtn, shuffleBtn, repeatBtn, heartBtn, lyricsBtn, queueBtn)) {
             Ui.pressable(v)
         }
+        addView(queueSheet, FrameLayout.LayoutParams(match, match))
     }
 
     fun refresh() {
@@ -364,6 +337,7 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         heartBtn.setImageResource(if (fav) R.drawable.ic_heart else R.drawable.ic_heart_outline)
         updateProgress()
         updateVolume()
+        queueSheet.refresh()
     }
 
     private fun updateProgress() {
@@ -389,13 +363,7 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         lyricsPanel.visibility = if (lyricsMode) View.VISIBLE else View.GONE
         lyricsBtn.setTextColor(if (lyricsMode) Color.WHITE else Ui.SILVER)
         lyricsBtn.setTypeface(null, if (lyricsMode) Typeface.BOLD else Typeface.NORMAL)
-        if (lyricsMode) {
-            loadLyrics()
-            armFull()
-        } else {
-            handler.removeCallbacks(fullRunnable)
-            setFullLyrics(false)
-        }
+        if (lyricsMode) loadLyrics()
     }
 
     private fun loadLyrics() {
@@ -517,13 +485,11 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         refresh()
         animateTo(1f, 460L, DecelerateInterpolator(1.9f), null)
         handler.post(ticker)
-        armFull()
     }
 
     fun hide() {
         handler.removeCallbacks(ticker)
-        handler.removeCallbacks(fullRunnable)
-        setFullLyrics(false)
+        queueSheet.close()
         animateTo(0f, 320L, AccelerateInterpolator(1.3f)) { visibility = View.GONE }
     }
 
@@ -543,16 +509,4 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         super.onDetachedFromWindow()
     }
 
-    private fun showQueue() {
-        val q = AudioPlayerManager.queue
-        if (q.isEmpty()) return
-        val cur = AudioPlayerManager.index
-        val items = Array(q.size) { i -> (if (i == cur) "[Playing] " else "") + q[i].title }
-        val d = dialog()
-            .setTitle("Queue")
-            .setItems(items) { _, which -> AudioPlayerManager.playAt(which) }
-            .create()
-        d.show()
-        d.listView.setSelection(maxOf(0, cur - 2))
-    }
 }

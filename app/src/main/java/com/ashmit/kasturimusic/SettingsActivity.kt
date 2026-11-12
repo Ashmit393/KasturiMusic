@@ -25,6 +25,8 @@ class SettingsActivity : Activity() {
     private val wrap = ViewGroup.LayoutParams.WRAP_CONTENT
 
     private var pendingFloating = false
+    private var pendingSub: TextView? = null
+    private var photoFrame: PhotoFrame? = null
     private var floatSwitch: Switch? = null
 
     private fun dp(v: Int) = Ui.dp(this, v)
@@ -77,7 +79,7 @@ class SettingsActivity : Activity() {
 
     private fun build() {
         val scroll = ScrollView(this)
-        scroll.setBackgroundColor(Theme.bg)
+        scroll.setBackgroundColor(android.graphics.Color.TRANSPARENT)
         val col = LinearLayout(this)
         col.orientation = LinearLayout.VERTICAL
         col.setPadding(dp(20), dp(16), dp(20), dp(32))
@@ -156,17 +158,73 @@ class SettingsActivity : Activity() {
         sc.setOnClickListener { showEqualizer() }
         col.addView(sc, LinearLayout.LayoutParams(match, wrap))
 
-        // Online music
-        col.addView(label("ONLINE MUSIC"))
-        val oc = card()
-        oc.addView(settingRow("Jamendo Client ID", { idText() }) { sub -> showIdDialog(sub) })
-        val idHint = TextView(this)
-        idHint.text = "Free ID: developer.jamendo.com par account banao, app register karo aur Client ID yahan paste karo. Gaane Creative Commons licence ke hain."
-        idHint.textSize = 12f
-        idHint.setTextColor(Theme.sub)
-        idHint.setPadding(0, 0, 0, dp(8))
-        oc.addView(idHint)
-        col.addView(oc, LinearLayout.LayoutParams(match, wrap))
+        // Personalization
+        col.addView(label("PERSONALIZATION"))
+        val pz = card()
+        pz.addView(settingRow("Background photo", { if (PhotoBg.has(this)) "Photo set (tap to change)" else "Not set (tap to choose)" }) { sub -> pickPhoto(sub) })
+        val blurLabel = TextView(this)
+        blurLabel.text = "Photo blur"
+        blurLabel.textSize = 13f
+        blurLabel.setTextColor(Theme.sub)
+        blurLabel.setPadding(0, dp(12), 0, 0)
+        pz.addView(blurLabel)
+        val blurSeek = SeekBar(this)
+        blurSeek.max = 100
+        blurSeek.progress = SettingsManager.bgBlur
+        blurSeek.progressTintList = ColorStateList.valueOf(Theme.accent)
+        blurSeek.thumbTintList = ColorStateList.valueOf(Theme.accent)
+        blurSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) {}
+            override fun onStartTrackingTouch(sb: SeekBar) {}
+            override fun onStopTrackingTouch(sb: SeekBar) {
+                SettingsManager.bgBlur = sb.progress
+                photoFrame?.refresh()
+            }
+        })
+        pz.addView(blurSeek)
+        val dimLabel = TextView(this)
+        dimLabel.text = "Photo dimming (text saaf dikhne ke liye)"
+        dimLabel.textSize = 13f
+        dimLabel.setTextColor(Theme.sub)
+        dimLabel.setPadding(0, dp(12), 0, 0)
+        pz.addView(dimLabel)
+        val dimSeek = SeekBar(this)
+        dimSeek.max = 100
+        dimSeek.progress = SettingsManager.bgDim
+        dimSeek.progressTintList = ColorStateList.valueOf(Theme.accent)
+        dimSeek.thumbTintList = ColorStateList.valueOf(Theme.accent)
+        dimSeek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar, p: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    SettingsManager.bgDim = p
+                    photoFrame?.updateScrim()
+                }
+            }
+            override fun onStartTrackingTouch(sb: SeekBar) {}
+            override fun onStopTrackingTouch(sb: SeekBar) {}
+        })
+        pz.addView(dimSeek)
+        pz.addView(settingRow("Remove photo", { "Default background par wapas" }) { sub ->
+            PhotoBg.remove(this)
+            photoFrame?.refresh()
+            pendingSub?.text = "Not set (tap to choose)"
+            sub.text = "Hata di"
+        })
+        val glassSw = Switch(this)
+        glassSw.text = "Liquid glass (live blur)"
+        glassSw.textSize = 16f
+        glassSw.setTextColor(Theme.text)
+        glassSw.isChecked = SettingsManager.liquidGlass
+        glassSw.setPadding(0, dp(14), 0, dp(4))
+        glassSw.setOnCheckedChangeListener { _, c -> SettingsManager.liquidGlass = c }
+        pz.addView(glassSw)
+        val glassHint = TextView(this)
+        glassHint.text = "Nav bar aur mini player par peeche ka content dhundhla dikhta hai. Phone slow lage to band kar do. Home par wapas jaane par lagu hota hai."
+        glassHint.textSize = 12f
+        glassHint.setTextColor(Theme.sub)
+        glassHint.setPadding(0, 0, 0, dp(8))
+        pz.addView(glassHint)
+        col.addView(pz, LinearLayout.LayoutParams(match, wrap))
 
         // Playback
         col.addView(label("PLAYBACK"))
@@ -209,54 +267,49 @@ class SettingsActivity : Activity() {
         // About
         col.addView(label("ABOUT"))
         val abc = card()
-        abc.setPadding(dp(16), dp(16), dp(16), dp(16))
-        fun line(text: String, size: Float, color: Int, bold: Boolean, top: Int) {
-            val t = TextView(this)
-            t.text = text
-            t.textSize = size
-            t.setTextColor(color)
-            if (bold) t.setTypeface(null, Typeface.BOLD)
-            t.setPadding(0, dp(top), 0, 0)
-            abc.addView(t)
-        }
-        var v = "1.0.0"
-        try { v = packageManager.getPackageInfo(packageName, 0).versionName ?: v } catch (e: Exception) { }
-        line("KASTURI MUSIC PLAYER", 18f, Theme.text, true, 0)
-        line("Version $v", 13f, Theme.sub, false, 2)
-        line("Made with \u2665 by Ashmit Singh", 16f, Theme.accent, true, 14)
-        line("Developer: Ashmit Singh", 14f, Theme.text, false, 4)
-        line("Songs play offline. Internet is used only to find lyrics. No ads. No tracking.", 13f, Theme.sub, false, 14)
-        line("ashmit393.github.io/KasturiMusic", 13f, Theme.sub, false, 10)
+        abc.addView(settingRow("About", { "Developer, contact aur version" }) { _ ->
+            startActivity(Intent(this, AboutActivity::class.java))
+        })
         col.addView(abc, LinearLayout.LayoutParams(match, wrap))
 
-        setContentView(scroll)
+        val pf = PhotoFrame(this, scroll)
+        photoFrame = pf
+        setContentView(pf)
     }
 
-    // ---------------- online music ----------------
-    private fun idText(): String {
-        val id = SettingsManager.jamendoId
-        return if (id.isBlank()) "Not set" else id.take(4) + "... (set)"
+    // ---------------- personalization ----------------
+    private fun pickPhoto(sub: TextView) {
+        pendingSub = sub
+        val i = Intent(Intent.ACTION_OPEN_DOCUMENT)
+        i.addCategory(Intent.CATEGORY_OPENABLE)
+        i.type = "image/*"
+        try {
+            startActivityForResult(i, 41)
+        } catch (e: Exception) {
+            android.widget.Toast.makeText(this, "Gallery nahi khuli", android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
-    private fun showIdDialog(sub: TextView) {
-        val et = android.widget.EditText(this)
-        et.setText(SettingsManager.jamendoId)
-        et.hint = "Client ID paste karo"
-        et.isSingleLine = true
-        val box = android.widget.FrameLayout(this)
-        box.setPadding(dp(20), dp(8), dp(20), 0)
-        box.addView(et, ViewGroup.LayoutParams(match, wrap))
-        dialog().setTitle("Jamendo Client ID").setView(box)
-            .setPositiveButton("Save") { _, _ ->
-                SettingsManager.jamendoId = et.text.toString()
-                sub.text = idText()
+    @Deprecated("Deprecated in Java")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == 41 && resultCode == RESULT_OK) {
+            val uri = data?.data
+            if (uri != null) {
+                val app = applicationContext
+                Thread {
+                    val ok = PhotoBg.save(app, uri)
+                    runOnUiThread {
+                        if (ok) {
+                            photoFrame?.refresh()
+                            pendingSub?.text = "Photo set (tap to change)"
+                        } else {
+                            android.widget.Toast.makeText(this, "Photo load nahi hui", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                }.start()
             }
-            .setNeutralButton("Clear") { _, _ ->
-                SettingsManager.jamendoId = ""
-                sub.text = idText()
-            }
-            .setNegativeButton("Cancel", null)
-            .show()
+        }
     }
 
     // ---------------- playback settings ----------------
