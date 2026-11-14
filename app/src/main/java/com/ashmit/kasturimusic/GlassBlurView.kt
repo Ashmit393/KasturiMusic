@@ -16,14 +16,18 @@ import android.os.SystemClock
 import android.view.View
 
 /**
- * Liquid glass: peeche ka content (source) is view ke andar draw hota hai aur GPU blur lagta hai.
- * - Android 12+ (aapka phone): RenderEffect = smooth asli blur, CPU kam.
- * - Purane Android: bahut chhota capture (fallback).
- * Ye sirf tab redraw hota hai jab content badle (scroll / animation): touch() call karne par
- * kuch der har frame update hota hai, phir ruk jaata hai (battery aur lag bachane ke liye).
+ * Liquid glass: peeche ka content (source) is view mein aata hai aur dhundhla hota hai.
+ * - compat = true (default): chhota capture + smooth box-blur + bada karke dikhana. Har phone par chalta hai.
+ * - compat = false (Android 12+): GPU RenderEffect blur (zyada smooth, par kuch phones par theek na chale).
+ * Redraw sirf tab hota hai jab content badle (scroll/animation): touch() se kuch der har frame update hota hai.
  */
-class GlassBlurView(ctx: Context, private val source: View, private val tint: Int) : View(ctx) {
-    private val gpu = Build.VERSION.SDK_INT >= 31
+class GlassBlurView(
+    ctx: Context,
+    private val source: View,
+    private val tint: Int,
+    compat: Boolean
+) : View(ctx) {
+    private var gpu = Build.VERSION.SDK_INT >= 31 && !compat
     private val shine = Paint()
     private var shineH = -1
     private val loc = IntArray(2)
@@ -31,13 +35,12 @@ class GlassBlurView(ctx: Context, private val source: View, private val tint: In
     private var activeUntil = 0L
     private var looping = false
 
-    // fallback (Android < 12)
     private var bmp: Bitmap? = null
     private val cv = Canvas()
     private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val dst = Rect()
     private var lastCapture = 0L
-    private val step = 6
+    private val step = 8
 
     private val loop = object : Runnable {
         override fun run() {
@@ -51,16 +54,16 @@ class GlassBlurView(ctx: Context, private val source: View, private val tint: In
     }
 
     init {
-        if (Build.VERSION.SDK_INT >= 31) {
-            val r = Ui.dp(ctx, 14).toFloat()
+        val sat = ColorMatrix()
+        sat.setSaturation(1.7f)
+        paint.colorFilter = ColorMatrixColorFilter(sat)
+        if (Build.VERSION.SDK_INT >= 31 && !compat) {
+            val r = Ui.dp(ctx, 18).toFloat()
             val blur = RenderEffect.createBlurEffect(r, r, Shader.TileMode.CLAMP)
-            val sat = ColorMatrix()
-            sat.setSaturation(1.6f)
             setRenderEffect(RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(sat), blur))
         }
     }
 
-    /** Content badla hai: kuch der har frame redraw karo. */
     fun touch(durationMs: Long = 350L) {
         activeUntil = maxOf(activeUntil, SystemClock.uptimeMillis() + durationMs)
         if (!looping) {
@@ -88,43 +91,45 @@ class GlassBlurView(ctx: Context, private val source: View, private val tint: In
         source.getLocationInWindow(srcLoc)
         val dx = (srcLoc[0] - loc[0]).toFloat()
         val dy = (srcLoc[1] - loc[1]).toFloat()
+        var drawn = false
         if (gpu && canvas.isHardwareAccelerated) {
             canvas.save()
             canvas.clipRect(0f, 0f, w.toFloat(), h.toFloat())
             canvas.translate(dx, dy)
             try {
                 source.draw(canvas)
+                drawn = true
             } catch (e: Exception) {
-                // is baar ka frame chhod do
+                gpu = false // GPU tareeka fail: compat par chale jao
             }
             canvas.restore()
-        } else {
-            drawFallback(canvas, w, h, dx, dy)
         }
+        if (!drawn) drawCompat(canvas, w, h, dx, dy)
         canvas.drawColor(tint)
         if (shineH != h) {
             shineH = h
             shine.shader = LinearGradient(
-                0f, 0f, 0f, h * 0.6f,
-                Color.argb(45, 255, 255, 255), Color.argb(0, 255, 255, 255), Shader.TileMode.CLAMP
+                0f, 0f, 0f, h * 0.7f,
+                Color.argb(55, 255, 255, 255), Color.argb(0, 255, 255, 255), Shader.TileMode.CLAMP
             )
         }
         canvas.drawRect(0f, 0f, w.toFloat(), h.toFloat(), shine)
     }
 
-    private fun drawFallback(canvas: Canvas, w: Int, h: Int, dx: Float, dy: Float) {
-        val bw = maxOf(2, w / step)
-        val bh = maxOf(2, h / step)
+    private fun drawCompat(canvas: Canvas, w: Int, h: Int, dx: Float, dy: Float) {
+        val bw = maxOf(4, w / step)
+        val bh = maxOf(4, h / step)
         val cur = bmp
         val b: Bitmap = if (cur != null && cur.width == bw && cur.height == bh) {
             cur
         } else {
             val nb = Bitmap.createBitmap(bw, bh, Bitmap.Config.ARGB_8888)
             bmp = nb
+            lastCapture = 0L
             nb
         }
         val now = SystemClock.uptimeMillis()
-        if (now - lastCapture > 60L) {
+        if (now - lastCapture > 50L) {
             cv.setBitmap(b)
             b.eraseColor(0)
             cv.save()
@@ -136,9 +141,49 @@ class GlassBlurView(ctx: Context, private val source: View, private val tint: In
                 // koi view software canvas par draw nahi hua
             }
             cv.restore()
+            boxBlur(b, 2)
+            boxBlur(b, 2)
             lastCapture = now
         }
         dst.set(0, 0, w, h)
         canvas.drawBitmap(b, null, dst, paint)
+    }
+
+    /** Chhote bitmap par saaf box blur (do pass): upscale karne par blocks nahi dikhte. */
+    private fun boxBlur(b: Bitmap, r: Int) {
+        val w = b.width
+        val h = b.height
+        val a = IntArray(w * h)
+        val t = IntArray(w * h)
+        b.getPixels(a, 0, w, 0, 0, w, h)
+        pass(a, t, w, h, r, true)
+        pass(t, a, w, h, r, false)
+        b.setPixels(a, 0, w, 0, 0, w, h)
+    }
+
+    private fun pass(src: IntArray, out: IntArray, w: Int, h: Int, r: Int, horizontal: Boolean) {
+        val lines = if (horizontal) h else w
+        val len = if (horizontal) w else h
+        for (l in 0 until lines) {
+            for (i in 0 until len) {
+                var sa = 0
+                var sr = 0
+                var sg = 0
+                var sb = 0
+                var n = 0
+                for (k in -r..r) {
+                    val j = i + k
+                    if (j < 0 || j >= len) continue
+                    val c = if (horizontal) src[l * w + j] else src[j * w + l]
+                    sa += c ushr 24
+                    sr += (c shr 16) and 255
+                    sg += (c shr 8) and 255
+                    sb += c and 255
+                    n++
+                }
+                val v = ((sa / n) shl 24) or ((sr / n) shl 16) or ((sg / n) shl 8) or (sb / n)
+                if (horizontal) out[l * w + i] = v else out[i * w + l] = v
+            }
+        }
     }
 }

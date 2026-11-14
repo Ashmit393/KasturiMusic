@@ -9,14 +9,15 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 /**
- * Auto-tag: gaano ke naam / artist / album apne aap sahi karta hai (MusicBrainz, 1 request/second).
- * Sirf pakka match apne aap lagta hai; baaki Review list mein aate hain. Original audio files nahi badalti.
+ * Auto-tag: gaano ke naam / artist / album / cover apne aap sahi karta hai (MusicBrainz + Cover Art Archive,
+ * 1 request/second). Sirf pakka match apne aap lagta hai; baaki Review mein. Original audio files nahi badalti.
  */
 object AutoTagger {
     class Review(val song: Song, val options: List<Suggestion>)
 
     private lateinit var p: SharedPreferences
     val review = ArrayList<Review>()
+    val fixedLog = ArrayList<String>()
 
     @Volatile var running = false
     @Volatile var cancelFlag = false
@@ -24,6 +25,8 @@ object AutoTagger {
     @Volatile var total = 0
     @Volatile var checked = 0
     @Volatile var fixed = 0
+    @Volatile var covers = 0
+    @Volatile var alreadyOk = 0
     @Volatile var noMatch = 0
     @Volatile var error: String? = null
 
@@ -43,10 +46,10 @@ object AutoTagger {
     }
 
     fun reviewCount(): Int = synchronized(review) { review.size }
-
     fun reviewList(): List<Review> = synchronized(review) { ArrayList(review) }
+    fun fixedList(): List<String> = synchronized(fixedLog) { ArrayList(fixedLog) }
 
-    /** Naam mein kachra (www, underscore, "official", number prefix) ya artist/album missing. */
+    /** Naam mein kachra ya artist/album missing. */
     fun needsFix(s: Song): Boolean {
         if (s.artist == "Unknown artist" || s.album == "Unknown album") return true
         val t = s.title
@@ -60,7 +63,7 @@ object AutoTagger {
     private fun norm(s: String): String =
         s.lowercase().replace(Regex("[^a-z0-9\\u0900-\\u097f]+"), "")
 
-    /** Auto-apply ke liye: naam aur artist dono milne chahiye (artist unknown ho to kabhi auto-apply nahi). */
+    /** Auto-apply: naam aur artist dono milne chahiye (artist unknown ho to kabhi auto-apply nahi). */
     private fun matches(song: Song, sug: Suggestion): Boolean {
         val lt = norm(AutoFix.cleanTitle(song.title))
         val st = norm(sug.title)
@@ -73,7 +76,10 @@ object AutoTagger {
         return titleOk && artistOk
     }
 
-    fun start(ctx: Context, songs: List<Song>, onlyMessy: Boolean, skipChecked: Boolean, fetchArt: Boolean) {
+    fun start(
+        ctx: Context, songs: List<Song>, onlyMessy: Boolean, skipChecked: Boolean,
+        fetchArt: Boolean, replaceArt: Boolean
+    ) {
         if (running) return
         val app = ctx.applicationContext
         init(app)
@@ -89,8 +95,11 @@ object AutoTagger {
         total = todo.size
         checked = 0
         fixed = 0
+        covers = 0
+        alreadyOk = 0
         noMatch = 0
         synchronized(review) { review.clear() }
+        synchronized(fixedLog) { fixedLog.clear() }
         Thread {
             var errors = 0
             val applied = loadIds("applied")
@@ -108,11 +117,21 @@ object AutoTagger {
                     errors = 0
                     val best = list.firstOrNull()
                     if (best != null && best.score >= 95 && matches(s, best)) {
-                        MetadataManager.set(s.id, best.title, best.artist, if (best.album.isBlank()) s.album else best.album)
-                        applied.add(s.id)
-                        fixed++
-                        if (fetchArt && best.releaseId.isNotBlank() && !ArtworkLoader.hasOwnArt(app, s)) {
-                            fetchCover(app, s.id, best.releaseId)
+                        val newAlbum = if (best.album.isBlank()) s.album else best.album
+                        val changed = best.title != s.title || best.artist != s.artist || newAlbum != s.album
+                        if (changed) {
+                            MetadataManager.set(s.id, best.title, best.artist, newAlbum)
+                            applied.add(s.id)
+                            fixed++
+                            synchronized(fixedLog) { fixedLog.add(s.title + " \u2192 " + best.title + " \u2022 " + best.artist) }
+                        } else {
+                            alreadyOk++
+                        }
+                        if (fetchArt && best.releaseId.isNotBlank() && (replaceArt || !ArtworkLoader.hasOwnArt(app, s))) {
+                            if (fetchCover(app, s.id, best.releaseId)) {
+                                covers++
+                                applied.add(s.id)
+                            }
                         }
                     } else if (list.isNotEmpty()) {
                         synchronized(review) { review.add(Review(s, list.take(4))) }
@@ -144,21 +163,47 @@ object AutoTagger {
     /** Review se user ne ek suggestion chuni. */
     fun applyManual(ctx: Context, song: Song, sug: Suggestion) {
         init(ctx)
-        MetadataManager.set(song.id, sug.title, sug.artist, if (sug.album.isBlank()) song.album else sug.album)
+        val newAlbum = if (sug.album.isBlank()) song.album else sug.album
+        MetadataManager.set(song.id, sug.title, sug.artist, newAlbum)
         val applied = loadIds("applied")
         applied.add(song.id)
         saveIds("applied", applied)
+        fixed++
+        synchronized(fixedLog) { fixedLog.add(song.title + " \u2192 " + sug.title + " \u2022 " + sug.artist) }
         synchronized(review) { review.removeAll { it.song.id == song.id } }
         MusicRepository.songs = MetadataManager.apply(MusicRepository.songs)
         MusicRepository.changed = true
         AudioPlayerManager.updateSongs(MusicRepository.songs.associateBy { it.id })
     }
 
+    /** Review ke saare gaano mein pehli (sabse achhi) suggestion laga do. Undo se wapas ho sakta hai. */
+    fun acceptAllBest(ctx: Context): Int {
+        init(ctx)
+        val items = reviewList()
+        val applied = loadIds("applied")
+        var n = 0
+        for (r in items) {
+            val x = r.options.firstOrNull() ?: continue
+            val newAlbum = if (x.album.isBlank()) r.song.album else x.album
+            MetadataManager.set(r.song.id, x.title, x.artist, newAlbum)
+            applied.add(r.song.id)
+            fixed++
+            n++
+            synchronized(fixedLog) { fixedLog.add(r.song.title + " \u2192 " + x.title + " \u2022 " + x.artist) }
+        }
+        saveIds("applied", applied)
+        synchronized(review) { review.clear() }
+        MusicRepository.songs = MetadataManager.apply(MusicRepository.songs)
+        MusicRepository.changed = true
+        AudioPlayerManager.updateSongs(MusicRepository.songs.associateBy { it.id })
+        return n
+    }
+
     fun skipReview(song: Song) {
         synchronized(review) { review.removeAll { it.song.id == song.id } }
     }
 
-    /** Auto-tag ke saare badlav wapas (original naam wapas aate hain). */
+    /** Auto-tag ke saare badlav wapas (original naam aur cover wapas aate hain). */
     fun undoAll(ctx: Context) {
         init(ctx)
         MetadataManager.init(ctx)
@@ -169,6 +214,13 @@ object AutoTagger {
         }
         p.edit().remove("applied").remove("done").apply()
         synchronized(review) { review.clear() }
+        synchronized(fixedLog) { fixedLog.clear() }
+        fixed = 0
+        covers = 0
+        alreadyOk = 0
+        noMatch = 0
+        checked = 0
+        total = 0
         MusicRepository.rescan = true
         ArtworkLoader.resetCaches()
     }
@@ -177,25 +229,26 @@ object AutoTagger {
         if (::p.isInitialized) p.edit().remove("done").apply()
     }
 
-    private fun fetchCover(ctx: Context, songId: Long, releaseId: String) {
+    private fun fetchCover(ctx: Context, songId: Long, releaseId: String): Boolean {
         try {
             val dir = File(ctx.filesDir, "covers")
             dir.mkdirs()
-            val c = URL("https://coverartarchive.org/release/$releaseId/front-250").openConnection() as HttpURLConnection
+            val c = URL("https://coverartarchive.org/release/$releaseId/front-500").openConnection() as HttpURLConnection
             try {
                 c.connectTimeout = 8000
-                c.readTimeout = 12000
+                c.readTimeout = 15000
                 c.setRequestProperty("User-Agent", "KasturiMusicPlayer/1.8 (https://github.com/Ashmit393/KasturiMusic)")
-                if (c.responseCode == 200) {
-                    c.inputStream.use { input ->
-                        File(dir, "$songId.jpg").outputStream().use { out -> input.copyTo(out) }
-                    }
-                }
+                if (c.responseCode != 200) return false
+                val tmp = File(dir, "$songId.part")
+                c.inputStream.use { input -> tmp.outputStream().use { out -> input.copyTo(out) } }
+                val f = File(dir, "$songId.jpg")
+                if (f.exists()) f.delete()
+                return tmp.renameTo(f)
             } finally {
                 c.disconnect()
             }
         } catch (e: Exception) {
-            // cover nahi mila: koi baat nahi
+            return false
         }
     }
 }

@@ -154,6 +154,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     private var scanCount = 0
     private val glassViews = ArrayList<GlassBlurView>()
     private var appliedGlass = false
+    private var appliedCompat = true
     private lateinit var photoFrame: PhotoFrame
     private lateinit var backdropView: View
     private val navItems = ArrayList<LinearLayout>()
@@ -168,6 +169,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         AudioPlayerManager.init(this)
         appliedTheme = SettingsManager.theme
         appliedGlass = SettingsManager.liquidGlass
+        appliedCompat = SettingsManager.glassCompat
         Ui.contentChanged = { pokeGlass() }
         volumeControlStream = android.media.AudioManager.STREAM_MUSIC
         buildUi()
@@ -184,7 +186,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     override fun onStart() {
         super.onStart()
         AudioPlayerManager.activityStarted()
-        if (SettingsManager.theme != appliedTheme || SettingsManager.liquidGlass != appliedGlass) {
+        if (SettingsManager.theme != appliedTheme || SettingsManager.liquidGlass != appliedGlass || SettingsManager.glassCompat != appliedCompat) {
             recreate()
             return
         }
@@ -675,7 +677,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         if (SettingsManager.liquidGlass) {
             miniBlur.visibility = View.GONE
             scrim.visibility = View.GONE
-            val mg = GlassBlurView(this, backdrop, Color.argb(70, 16, 16, 20))
+            val mg = GlassBlurView(this, backdrop, Color.argb(60, 24, 24, 30), SettingsManager.glassCompat)
             glassViews.add(mg)
             miniCard.addView(mg, 0, FrameLayout.LayoutParams(match, match))
         }
@@ -1141,7 +1143,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         card.outlineProvider = RoundOutline(dp(30).toFloat())
         card.clipToOutline = true
         if (SettingsManager.liquidGlass) {
-            val ng = GlassBlurView(this, backdropView, Color.argb(80, 16, 16, 20))
+            val ng = GlassBlurView(this, backdropView, Color.argb(70, 24, 24, 30), SettingsManager.glassCompat)
             glassViews.add(ng)
             card.addView(ng, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }

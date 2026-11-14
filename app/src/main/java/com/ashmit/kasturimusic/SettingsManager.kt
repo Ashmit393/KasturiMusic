@@ -30,6 +30,11 @@ object SettingsManager {
         get() = p.getInt("bg_dim", 40)
         set(v) { p.edit().putInt("bg_dim", v).apply() }
 
+    /** true = compat (software) glass blur, har phone par chalta hai; false = GPU blur (Android 12+) */
+    var glassCompat: Boolean
+        get() = p.getBoolean("glass_compat", true)
+        set(v) { p.edit().putBoolean("glass_compat", v).apply() }
+
     /** Nav bar aur mini player par live glass blur */
     var liquidGlass: Boolean
         get() = p.getBoolean("liquid_glass", true)

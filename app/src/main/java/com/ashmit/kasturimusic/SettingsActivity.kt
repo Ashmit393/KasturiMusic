@@ -226,6 +226,20 @@ class SettingsActivity : Activity() {
         glassSw.setPadding(0, dp(14), 0, dp(4))
         glassSw.setOnCheckedChangeListener { _, c -> SettingsManager.liquidGlass = c }
         pz.addView(glassSw)
+        val compatSw = Switch(this)
+        compatSw.text = "Glass compatibility mode"
+        compatSw.textSize = 15f
+        compatSw.setTextColor(Theme.text)
+        compatSw.isChecked = SettingsManager.glassCompat
+        compatSw.setPadding(0, dp(6), 0, dp(4))
+        compatSw.setOnCheckedChangeListener { _, c -> SettingsManager.glassCompat = c }
+        pz.addView(compatSw)
+        val compatHint = TextView(this)
+        compatHint.text = "On (default): har phone par chalta hai. Off karke GPU blur try kar sakte ho (zyada smooth, par kuch phones par theek nahi chalta)."
+        compatHint.textSize = 12f
+        compatHint.setTextColor(Theme.sub)
+        compatHint.setPadding(0, 0, 0, dp(4))
+        pz.addView(compatHint)
         val glassHint = TextView(this)
         glassHint.text = "Nav bar aur mini player par peeche ka content dhundhla dikhta hai. Phone slow lage to band kar do. Home par wapas jaane par lagu hota hai."
         glassHint.textSize = 12f

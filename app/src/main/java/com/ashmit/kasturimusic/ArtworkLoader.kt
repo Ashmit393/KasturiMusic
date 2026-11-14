@@ -69,6 +69,16 @@ object ArtworkLoader {
 
     private fun decode(ctx: Context, song: Song, px: Int): Bitmap? {
         if (song.source != 0) return decodeRemote(song, px)
+        // Auto-tag se aaya cover (agar hai to wahi dikhao)
+        try {
+            val cf = File(File(ctx.filesDir, "covers"), song.id.toString() + ".jpg")
+            if (cf.exists()) {
+                val cb = decodeBytes(cf.readBytes(), px)
+                if (cb != null) return cb
+            }
+        } catch (e: Exception) {
+            // aage badho
+        }
         if (Build.VERSION.SDK_INT >= 29) {
             try {
                 val t = ctx.contentResolver.loadThumbnail(song.uri, Size(px, px), null)
