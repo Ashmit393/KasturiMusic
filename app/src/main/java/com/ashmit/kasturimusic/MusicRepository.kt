@@ -7,6 +7,10 @@ object MusicRepository {
     @Volatile
     var songs: List<Song> = emptyList()
 
+    /** Auto-tag ne info badli: UI ko refresh karo. rescan = MediaStore se dobara padho (undo ke baad). */
+    @Volatile var changed = false
+    @Volatile var rescan = false
+
     private lateinit var p: SharedPreferences
     private val favs = LinkedHashSet<Long>()
     private val recents = ArrayList<Long>()

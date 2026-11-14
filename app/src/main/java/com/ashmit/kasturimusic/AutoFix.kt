@@ -7,31 +7,54 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
 
-class Suggestion(val title: String, val artist: String, val album: String)
+class Suggestion(
+    val title: String,
+    val artist: String,
+    val album: String,
+    val score: Int = 0,
+    val releaseId: String = ""
+)
 
-/** Gaane ka naam / artist / album sahi karne ke suggestions (MusicBrainz, free). User confirm karta hai. */
+/** Gaane ka naam / artist / album sahi karne ke liye MusicBrainz (free) se suggestions. */
 object AutoFix {
     private fun enc(s: String): String = URLEncoder.encode(s, "UTF-8")
 
-    /** cb main thread par: null = error, khali list = kuch nahi mila. */
+    fun cleanTitle(t: String): String {
+        var title = t.replace(Regex("\\s*[\\(\\[].*?[\\)\\]]"), " ")
+        title = title.replace(Regex("(?i)www\\.[^\\s]+"), " ")
+        title = title.replace('_', ' ')
+        title = title.replace(Regex("^\\s*\\d{1,3}\\s*[.\\-_]+\\s*"), "")
+        title = title.replace(Regex("\\s+"), " ").trim()
+        return if (title.isEmpty()) t.trim() else title
+    }
+
+    fun firstArtist(a: String): String {
+        if (a == "Unknown artist") return ""
+        return a.split(",", "&", " feat", " ft.", " x ")[0].trim()
+    }
+
+    /** Background thread par chalao (blocking). null = internet/server error, khali = kuch nahi mila. */
+    fun lookup(song: Song): List<Suggestion>? {
+        try {
+            val title = cleanTitle(song.title).replace("\"", "")
+            val artist = firstArtist(song.artist).replace("\"", "")
+            var q = "recording:\"$title\""
+            if (artist.isNotEmpty()) q += " AND artist:\"$artist\""
+            var out = query(q) ?: return null
+            if (out.isEmpty() && artist.isNotEmpty()) {
+                Thread.sleep(1100)
+                out = query("recording:\"$title\"") ?: return null
+            }
+            return out
+        } catch (e: Exception) {
+            return null
+        }
+    }
+
+    /** cb main thread par. */
     fun suggest(song: Song, cb: (List<Suggestion>?) -> Unit) {
         Thread {
-            var out: List<Suggestion>? = null
-            try {
-                var title = song.title.replace(Regex("\\s*[\\(\\[].*?[\\)\\]]"), "").trim()
-                if (title.isEmpty()) title = song.title
-                var artist = if (song.artist == "Unknown artist") "" else song.artist
-                artist = artist.split(",", "&", " feat", " ft.")[0].trim()
-                var q = "recording:\"" + title.replace("\"", "") + "\""
-                if (artist.isNotEmpty()) q += " AND artist:\"" + artist.replace("\"", "") + "\""
-                out = query(q)
-                if (out != null && out.isEmpty() && artist.isNotEmpty()) {
-                    out = query("recording:\"" + title.replace("\"", "") + "\"")
-                }
-            } catch (e: Exception) {
-                out = null
-            }
-            val res = out
+            val res = lookup(song)
             Handler(Looper.getMainLooper()).post { cb(res) }
         }.start()
     }
@@ -42,7 +65,7 @@ object AutoFix {
         try {
             c.connectTimeout = 8000
             c.readTimeout = 12000
-            c.setRequestProperty("User-Agent", "KasturiMusicPlayer/1.7 (https://github.com/Ashmit393/KasturiMusic)")
+            c.setRequestProperty("User-Agent", "KasturiMusicPlayer/1.8 (https://github.com/Ashmit393/KasturiMusic)")
             c.setRequestProperty("Accept", "application/json")
             if (c.responseCode != 200) return null
             val text = c.inputStream.bufferedReader().use { it.readText() }
@@ -63,10 +86,17 @@ object AutoFix {
                 }
                 val artist = sb.toString().trim()
                 var album = ""
+                var releaseId = ""
                 val rel = r.optJSONArray("releases")
-                if (rel != null && rel.length() > 0) album = rel.optJSONObject(0)?.optString("title") ?: ""
+                if (rel != null && rel.length() > 0) {
+                    val r0 = rel.optJSONObject(0)
+                    if (r0 != null) {
+                        album = r0.optString("title")
+                        releaseId = r0.optString("id")
+                    }
+                }
                 val key = t.lowercase() + "|" + artist.lowercase()
-                if (artist.isNotEmpty() && seen.add(key)) out.add(Suggestion(t, artist, album))
+                if (artist.isNotEmpty() && seen.add(key)) out.add(Suggestion(t, artist, album, r.optInt("score", 0), releaseId))
                 if (out.size >= 5) break
             }
             return out

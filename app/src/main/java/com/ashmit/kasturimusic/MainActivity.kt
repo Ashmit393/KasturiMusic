@@ -152,6 +152,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     private var homeHero: View? = null
     private var homeKey = ""
     private var scanCount = 0
+    private val glassViews = ArrayList<GlassBlurView>()
     private var appliedGlass = false
     private lateinit var photoFrame: PhotoFrame
     private lateinit var backdropView: View
@@ -167,6 +168,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         AudioPlayerManager.init(this)
         appliedTheme = SettingsManager.theme
         appliedGlass = SettingsManager.liquidGlass
+        Ui.contentChanged = { pokeGlass() }
         volumeControlStream = android.media.AudioManager.STREAM_MUSIC
         buildUi()
         Theme.applyBars(window)
@@ -187,11 +189,25 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             return
         }
         photoFrame.refresh()
+        if (MusicRepository.rescan) {
+            MusicRepository.rescan = false
+            MusicRepository.changed = false
+            scan()
+        } else if (MusicRepository.changed) {
+            MusicRepository.changed = false
+            scanCount++
+            refresh()
+        }
         stopService(Intent(this, FloatingPlayerService::class.java))
         AudioPlayerManager.addListener(this)
         onChanged()
         nowPlaying.resumeTicker()
         if (hasAudio() && (!scanned || System.currentTimeMillis() - lastScan > 120_000L)) scan()
+    }
+
+    override fun onDestroy() {
+        Ui.contentChanged = null
+        super.onDestroy()
     }
 
     override fun onStop() {
@@ -288,7 +304,12 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     }
 
     // ---------------- listener ----------------
+    private fun pokeGlass() {
+        for (g in glassViews) g.touch()
+    }
+
     override fun onChanged() {
+        pokeGlass()
         updateMini()
         nowPlaying.refresh()
         val noDrill = drillSongs == null && drillPlaylist == null
@@ -324,6 +345,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
     // ---------------- mini player: bubble <-> bar ----------------
     private fun applyMiniProgress(p: Float) {
         miniP = p
+        pokeGlass()
         val fullW = resources.displayMetrics.widthPixels - dp(20)
         val small = dp(64)
         val lp = miniCard.layoutParams as FrameLayout.LayoutParams
@@ -544,6 +566,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             }
 
             override fun onScroll(view: AbsListView, first: Int, visible: Int, total: Int) {
+                pokeGlass()
                 val c = view.getChildAt(0) ?: return
                 val key = first * 10000 - c.top
                 val dy = key - lastKey
@@ -576,6 +599,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         homeScroll.addView(homeBox, ViewGroup.LayoutParams(match, wrap))
         homeScroll.visibility = View.GONE
         homeScroll.setOnScrollChangeListener { _, _, y, _, oldY ->
+            pokeGlass()
             val h = homeHero
             if (h != null) {
                 h.translationY = y * 0.3f
@@ -651,10 +675,9 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         if (SettingsManager.liquidGlass) {
             miniBlur.visibility = View.GONE
             scrim.visibility = View.GONE
-            miniCard.addView(
-                GlassBlurView(this, backdrop, Color.argb(95, 18, 18, 22)), 0,
-                FrameLayout.LayoutParams(match, match)
-            )
+            val mg = GlassBlurView(this, backdrop, Color.argb(70, 16, 16, 20))
+            glassViews.add(mg)
+            miniCard.addView(mg, 0, FrameLayout.LayoutParams(match, match))
         }
         val edge = View(this)
         edgeDrawable.setColor(Color.TRANSPARENT)
@@ -1073,6 +1096,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             listView.visibility = View.GONE
             emptyView.visibility = View.VISIBLE
         }
+        pokeGlass()
         updateNav()
     }
 
@@ -1117,10 +1141,9 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         card.outlineProvider = RoundOutline(dp(30).toFloat())
         card.clipToOutline = true
         if (SettingsManager.liquidGlass) {
-            card.addView(
-                GlassBlurView(this, backdropView, Color.argb(120, 18, 18, 22)),
-                FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
-            )
+            val ng = GlassBlurView(this, backdropView, Color.argb(80, 16, 16, 20))
+            glassViews.add(ng)
+            card.addView(ng, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         card.addView(pill, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         root.addView(card, lp)
@@ -1372,6 +1395,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             homeBox.addView(label)
             val hs = HorizontalScrollView(this)
             hs.isHorizontalScrollBarEnabled = false
+            hs.setOnScrollChangeListener { _, _, _, _, _ -> pokeGlass() }
             val row = LinearLayout(this)
             row.orientation = LinearLayout.HORIZONTAL
             row.setPadding(dp(16), 0, dp(8), 0)

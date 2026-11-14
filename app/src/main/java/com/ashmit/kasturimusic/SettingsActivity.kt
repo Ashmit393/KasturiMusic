@@ -158,6 +158,14 @@ class SettingsActivity : Activity() {
         sc.setOnClickListener { showEqualizer() }
         col.addView(sc, LinearLayout.LayoutParams(match, wrap))
 
+        // Library
+        col.addView(label("LIBRARY"))
+        val lc = card()
+        lc.addView(settingRow("Auto-tag", { "Gaano ke naam, artist, album apne aap sahi karo" }) { _ ->
+            startActivity(Intent(this, AutoTagActivity::class.java))
+        })
+        col.addView(lc, LinearLayout.LayoutParams(match, wrap))
+
         // Personalization
         col.addView(label("PERSONALIZATION"))
         val pz = card()

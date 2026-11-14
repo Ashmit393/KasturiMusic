@@ -1,13 +1,19 @@
 package com.ashmit.kasturimusic
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Outline
+import android.graphics.RenderEffect
+import android.graphics.Shader
 import android.graphics.drawable.BitmapDrawable
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.graphics.drawable.TransitionDrawable
+import android.os.Build
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewOutlineProvider
@@ -22,6 +28,9 @@ object Ui {
     val GRAPHITE: Int = Color.parseColor("#1C1C1E")
     val GRAPHITE2: Int = Color.parseColor("#2C2C2E")
     val DIM: Int = Color.parseColor("#8E8E93")
+
+    /** Koi artwork/blur load hua: glass views ko redraw karne ka signal. */
+    var contentChanged: (() -> Unit)? = null
 
     fun dp(ctx: Context, v: Int): Int = (v * ctx.resources.displayMetrics.density + 0.5f).toInt()
 
@@ -74,6 +83,7 @@ object Ui {
                 iv.clearColorFilter()
                 iv.scaleType = ImageView.ScaleType.CENTER_CROP
                 iv.setImageBitmap(bmp)
+                contentChanged?.invoke()
             }
         }
     }
@@ -93,7 +103,10 @@ object Ui {
         }
     }
 
-    /** Album art ka dhundhla version background mein, crossfade ke saath. */
+    /**
+     * Album art ka dhundhla version background mein, crossfade ke saath.
+     * Android 12+: GPU blur (smooth, achha dikhta hai). Purane Android: chhota bitmap upscale.
+     */
     fun bindBlur(iv: ImageView, song: Song?) {
         val key = "blur" + (song?.id ?: -1L)
         iv.tag = key
@@ -101,7 +114,14 @@ object Ui {
             iv.setImageDrawable(null)
             return
         }
-        ArtworkLoader.loadBlur(iv.context, song) { bmp ->
+        if (Build.VERSION.SDK_INT >= 31) {
+            val r = 30f
+            val blur = RenderEffect.createBlurEffect(r, r, Shader.TileMode.CLAMP)
+            val sat = ColorMatrix()
+            sat.setSaturation(1.4f)
+            iv.setRenderEffect(RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(sat), blur))
+        }
+        val done: (Bitmap?) -> Unit = { bmp ->
             if (iv.tag == key) {
                 if (bmp == null) {
                     iv.setImageDrawable(null)
@@ -115,7 +135,13 @@ object Ui {
                     iv.setImageDrawable(td)
                     td.startTransition(500)
                 }
+                contentChanged?.invoke()
             }
+        }
+        if (Build.VERSION.SDK_INT >= 31) {
+            ArtworkLoader.load(iv.context, song, 160, done)
+        } else {
+            ArtworkLoader.loadBlur(iv.context, song, done)
         }
     }
 }

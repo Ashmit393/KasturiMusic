@@ -81,13 +81,48 @@ object ArtworkLoader {
         try {
             mmr = MediaMetadataRetriever()
             mmr.setDataSource(ctx, song.uri)
-            val data = mmr.embeddedPicture ?: return null
-            return decodeBytes(data, px)
+            val data = mmr.embeddedPicture
+            if (data != null) return decodeBytes(data, px)
         } catch (e: Exception) {
-            return null
+            // aage badho
         } finally {
             try { mmr?.release() } catch (e: Exception) { }
         }
+        // Auto-tag se mila cover (jab gaane mein apna art nahi hota)
+        try {
+            val cf = File(File(ctx.filesDir, "covers"), song.id.toString() + ".jpg")
+            if (cf.exists()) return decodeBytes(cf.readBytes(), px)
+        } catch (e: Exception) {
+            // koi baat nahi
+        }
+        return null
+    }
+
+    /** Kya gaane mein apna art hai (auto-tag ka cover chhodke)? Background thread par chalao. */
+    fun hasOwnArt(ctx: Context, song: Song): Boolean {
+        if (Build.VERSION.SDK_INT >= 29) {
+            try {
+                ctx.contentResolver.loadThumbnail(song.uri, Size(64, 64), null)
+                return true
+            } catch (e: Exception) {
+                // aage dekho
+            }
+        }
+        var mmr: MediaMetadataRetriever? = null
+        try {
+            mmr = MediaMetadataRetriever()
+            mmr.setDataSource(ctx, song.uri)
+            return mmr.embeddedPicture != null
+        } catch (e: Exception) {
+            return false
+        } finally {
+            try { mmr?.release() } catch (e: Exception) { }
+        }
+    }
+
+    fun resetCaches() {
+        failed.clear()
+        cache.evictAll()
     }
 
     private fun decodeBytes(data: ByteArray, px: Int): Bitmap? {
