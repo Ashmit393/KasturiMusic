@@ -69,6 +69,7 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
     private val repeatBtn = Ui.iconButton(ctx, R.drawable.ic_repeat, Ui.DIM)
     private val heartBtn = Ui.iconButton(ctx, R.drawable.ic_heart_outline, Ui.SILVER)
     private val lyricsBtn = TextView(ctx)
+    private val eqBtn = TextView(ctx)
     private val queueBtn = TextView(ctx)
     private var dragging = false
     private var volDragging = false
@@ -275,6 +276,10 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         lyricsBtn.textSize = 15f
         lyricsBtn.setTextColor(Ui.SILVER)
         lyricsBtn.gravity = Gravity.CENTER
+        eqBtn.text = "EQ"
+        eqBtn.textSize = 15f
+        eqBtn.setTextColor(Ui.SILVER)
+        eqBtn.gravity = Gravity.CENTER
         queueBtn.text = "Queue"
         queueBtn.textSize = 15f
         queueBtn.setTextColor(Ui.SILVER)
@@ -284,6 +289,7 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         bottom.gravity = Gravity.CENTER_VERTICAL
         bottom.addView(heartBtn, LinearLayout.LayoutParams(0, dp(44), 1f))
         bottom.addView(lyricsBtn, LinearLayout.LayoutParams(0, dp(44), 1f))
+        bottom.addView(eqBtn, LinearLayout.LayoutParams(0, dp(44), 1f))
         bottom.addView(queueBtn, LinearLayout.LayoutParams(0, dp(44), 1f))
         col.addView(bottom, LinearLayout.LayoutParams(match, wrap))
 
@@ -301,8 +307,9 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
             }
         }
         lyricsBtn.setOnClickListener { toggleLyrics() }
+        eqBtn.setOnClickListener { AppleEqDialog.show(context) }
         queueBtn.setOnClickListener { queueSheet.open() }
-        for (v in listOf<View>(playBtn, prevBtn, nextBtn, shuffleBtn, repeatBtn, heartBtn, lyricsBtn, queueBtn)) {
+        for (v in listOf<View>(playBtn, prevBtn, nextBtn, shuffleBtn, repeatBtn, heartBtn, lyricsBtn, eqBtn, queueBtn)) {
             Ui.pressable(v)
         }
         addView(queueSheet, FrameLayout.LayoutParams(match, match))
