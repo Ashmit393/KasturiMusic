@@ -8,15 +8,15 @@ import android.view.Gravity
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.SeekBar
+import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 
 object AppleEqDialog {
     fun show(ctx: Context) {
-        val sessionId = AudioPlayerManager.sessionId()
-        EqualizerManager.ensureInit(sessionId)
-        val bands = EqualizerManager.bandCount()
-        if (bands <= 0) {
+        EqualizerManager.init(ctx)
+        val bandCount = EqualizerManager.bands()
+        if (!EqualizerManager.available || bandCount <= 0) {
             Toast.makeText(ctx, "Equalizer available nahi hai is device par", Toast.LENGTH_SHORT).show()
             return
         }
@@ -27,35 +27,49 @@ object AppleEqDialog {
             setPadding(Ui.dp(ctx, 20), Ui.dp(ctx, 18), Ui.dp(ctx, 20), Ui.dp(ctx, 18))
         }
 
+        val topRow = LinearLayout(ctx).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
         val title = TextView(ctx).apply {
             text = "EQUALIZER"
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)
             letterSpacing = 0.1f
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         }
-        root.addView(title)
+        val enableSw = Switch(ctx).apply {
+            isChecked = EqualizerManager.enabled
+            setOnCheckedChangeListener { _, checked ->
+                EqualizerManager.enabled = checked
+            }
+        }
+        topRow.addView(title)
+        topRow.addView(enableSw)
+        root.addView(topRow)
 
-        val presets = EqualizerManager.presetNames()
-        if (presets.isNotEmpty()) {
+        val presetList = EqualizerManager.presets()
+        if (presetList.isNotEmpty()) {
             val presetRow = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(0, Ui.dp(ctx, 10), 0, Ui.dp(ctx, 8))
             }
             val presetBtn = TextView(ctx).apply {
-                val cur = presets.getOrElse(EqualizerManager.currentPreset()) { "Custom" }
-                text = "Preset: $cur (Tap)"
+                text = "Preset: Tap to select"
                 textSize = 13f
                 setTextColor(Ui.SILVER)
                 background = Ui.roundRect(Ui.GRAPHITE2, Ui.dp(ctx, 10).toFloat())
                 setPadding(Ui.dp(ctx, 12), Ui.dp(ctx, 8), Ui.dp(ctx, 12), Ui.dp(ctx, 8))
                 setOnClickListener {
+                    val items: Array<CharSequence> = presetList.map { it as CharSequence }.toTypedArray()
                     AlertDialog.Builder(ctx, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                         .setTitle("EQ Preset")
-                        .setItems(presets) { _, which ->
+                        .setItems(items) { _, which: Int ->
                             EqualizerManager.usePreset(which)
-                            text = "Preset: ${presets[which]}"
+                            text = "Preset: ${presetList[which]}"
+                            Toast.makeText(ctx, "Preset applied: ${presetList[which]}", Toast.LENGTH_SHORT).show()
                         }
                         .show()
                 }
@@ -64,12 +78,13 @@ object AppleEqDialog {
             root.addView(presetRow)
         }
 
-        val minDb = EqualizerManager.minDb()
-        val maxDb = EqualizerManager.maxDb()
-        val range = maxOf(1, maxDb - minDb)
+        val r = EqualizerManager.range()
+        val minMb = r[0]
+        val maxMb = r[1]
+        val spanMb = maxOf(1, maxMb - minMb)
 
-        for (i in 0 until bands) {
-            val hz = EqualizerManager.centerFreqHz(i)
+        for (i in 0 until bandCount) {
+            val hz = EqualizerManager.freqHz(i)
             val labelText = if (hz >= 1000) "${hz / 1000} kHz" else "$hz Hz"
             val row = LinearLayout(ctx).apply {
                 orientation = LinearLayout.HORIZONTAL
@@ -82,8 +97,9 @@ object AppleEqDialog {
                 setTextColor(Ui.SILVER)
                 layoutParams = LinearLayout.LayoutParams(Ui.dp(ctx, 64), LinearLayout.LayoutParams.WRAP_CONTENT)
             }
+            val curMb = EqualizerManager.level(i)
+            val curDb = curMb / 100
             val valTxt = TextView(ctx).apply {
-                val curDb = EqualizerManager.bandDb(i)
                 text = "${if (curDb > 0) "+" else ""}${curDb} dB"
                 textSize = 12f
                 setTextColor(Ui.DIM)
@@ -91,15 +107,16 @@ object AppleEqDialog {
                 layoutParams = LinearLayout.LayoutParams(Ui.dp(ctx, 56), LinearLayout.LayoutParams.WRAP_CONTENT)
             }
             val sb = SeekBar(ctx).apply {
-                max = range
-                progress = (EqualizerManager.bandDb(i) - minDb).coerceIn(0, range)
+                max = spanMb
+                progress = (curMb - minMb).coerceIn(0, spanMb)
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
                 setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                     override fun onProgressChanged(seekBar: SeekBar?, p: Int, fromUser: Boolean) {
-                        val db = minDb + p
+                        val mb = minMb + p
+                        val db = mb / 100
                         valTxt.text = "${if (db > 0) "+" else ""}${db} dB"
                         if (fromUser) {
-                            EqualizerManager.setBandDb(i, db)
+                            EqualizerManager.setLevel(i, mb)
                         }
                     }
                     override fun onStartTrackingTouch(seekBar: SeekBar?) {}
@@ -123,8 +140,10 @@ object AppleEqDialog {
             setTextColor(Color.WHITE)
             background = Ui.roundRect(Ui.GRAPHITE2, Ui.dp(ctx, 10).toFloat())
             setOnClickListener {
-                EqualizerManager.resetFlat()
-                Toast.makeText(ctx, "EQ Reset", Toast.LENGTH_SHORT).show()
+                for (i in 0 until bandCount) {
+                    EqualizerManager.setLevel(i, 0)
+                }
+                Toast.makeText(ctx, "EQ Flat (0 dB)", Toast.LENGTH_SHORT).show()
             }
         }
         resetRow.addView(resetBtn)
