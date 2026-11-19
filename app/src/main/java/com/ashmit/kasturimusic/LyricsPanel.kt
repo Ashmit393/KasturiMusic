@@ -13,6 +13,7 @@ import android.widget.FrameLayout
 import android.widget.ListView
 import android.widget.TextView
 
+/** Apple-style lyrics: chalti line badi + safed + halki glow, baaki lines dhundhli. */
 class LyricsPanel(
     ctx: Context,
     private val onSeek: (Int) -> Unit,
@@ -29,10 +30,10 @@ class LyricsPanel(
     private var current = -1
     private var lastTouch = 0L
 
-    private val cMid = Color.argb(175, 255, 255, 255)
+    private val cMid = Color.argb(160, 255, 255, 255)
     private val cDim = Color.argb(85, 255, 255, 255)
-    private val cPlain = Color.argb(235, 255, 255, 255)
-    private val cGlow = Color.argb(215, 255, 255, 255)
+    private val cPlain = Color.argb(230, 255, 255, 255)
+    private val cGlow = Color.argb(235, 255, 255, 255)
 
     private fun dp(v: Int) = Ui.dp(context, v)
 
@@ -41,7 +42,6 @@ class LyricsPanel(
         list.setSelector(android.R.color.transparent)
         list.isVerticalScrollBarEnabled = false
         list.overScrollMode = View.OVER_SCROLL_NEVER
-        list.isScrollingCacheEnabled = false
         spacerTop.layoutParams = AbsListView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1)
         spacerBottom.layoutParams = AbsListView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 1)
         list.addHeaderView(spacerTop, null, false)
@@ -110,6 +110,7 @@ class LyricsPanel(
         adapter.notifyDataSetChanged()
     }
 
+    /** Har 250ms par call hota hai. */
     fun tick(posMs: Int) {
         val l = lyrics ?: return
         if (!l.synced) return
@@ -133,27 +134,22 @@ class LyricsPanel(
                 tv = convertView
             } else {
                 tv = TextView(context)
-                tv.textSize = 22f
                 tv.setPadding(dp(4), dp(10), dp(4), dp(10))
                 tv.setTypeface(null, Typeface.BOLD)
             }
             val l = lyrics ?: return tv
             tv.text = l.lines[position]
             if (!l.synced) {
-                tv.scaleX = 0.92f
-                tv.scaleY = 0.92f
+                tv.textSize = 18f
                 tv.setTextColor(cPlain)
                 tv.setShadowLayer(0f, 0f, 0f, 0)
             } else if (position == current) {
-                tv.scaleX = 1.08f
-                tv.scaleY = 1.08f
+                tv.textSize = 26f
                 tv.setTextColor(Color.WHITE)
-                tv.setShadowLayer(dp(10).toFloat(), 0f, 0f, cGlow)
+                tv.setShadowLayer(dp(12).toFloat(), 0f, 0f, cGlow)
             } else {
-                val near = kotlin.math.abs(position - current) == 1
-                tv.scaleX = if (near) 1.0f else 0.95f
-                tv.scaleY = if (near) 1.0f else 0.95f
-                tv.setTextColor(if (near) cMid else cDim)
+                tv.textSize = 22f
+                tv.setTextColor(if (Math.abs(position - current) == 1) cMid else cDim)
                 tv.setShadowLayer(0f, 0f, 0f, 0)
             }
             return tv
