@@ -103,25 +103,26 @@ object Ui {
         }
     }
 
+    private val vivid: ColorMatrixColorFilter by lazy {
+        val m = ColorMatrix()
+        m.setSaturation(1.5f)
+        ColorMatrixColorFilter(m)
+    }
+
     /**
-     * Album art ka dhundhla version background mein, crossfade ke saath.
-     * Android 12+: GPU blur (smooth, achha dikhta hai). Purane Android: chhota bitmap upscale.
+     * Album art ka silky dhundhla background (Apple jaisa), crossfade ke saath.
+     * Blur pehle se bitmap mein bana hota hai (GPU blur nahi), isliye crossfade ke dauran lag nahi aata.
      */
     fun bindBlur(iv: ImageView, song: Song?) {
         val key = "blur" + (song?.id ?: -1L)
         iv.tag = key
+        if (Build.VERSION.SDK_INT >= 31) iv.setRenderEffect(null)
+        iv.colorFilter = vivid
         if (song == null) {
             iv.setImageDrawable(null)
             return
         }
-        if (Build.VERSION.SDK_INT >= 31) {
-            val r = 30f
-            val blur = RenderEffect.createBlurEffect(r, r, Shader.TileMode.CLAMP)
-            val sat = ColorMatrix()
-            sat.setSaturation(1.4f)
-            iv.setRenderEffect(RenderEffect.createColorFilterEffect(ColorMatrixColorFilter(sat), blur))
-        }
-        val done: (Bitmap?) -> Unit = { bmp ->
+        ArtworkLoader.loadBlur(iv.context, song) { bmp ->
             if (iv.tag == key) {
                 if (bmp == null) {
                     iv.setImageDrawable(null)
@@ -133,15 +134,10 @@ object Ui {
                     )
                     td.isCrossFadeEnabled = true
                     iv.setImageDrawable(td)
-                    td.startTransition(500)
+                    td.startTransition(380)
                 }
                 contentChanged?.invoke()
             }
-        }
-        if (Build.VERSION.SDK_INT >= 31) {
-            ArtworkLoader.load(iv.context, song, 160, done)
-        } else {
-            ArtworkLoader.loadBlur(iv.context, song, done)
         }
     }
 }

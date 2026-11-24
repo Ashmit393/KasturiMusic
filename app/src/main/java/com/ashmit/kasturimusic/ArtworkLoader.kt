@@ -30,6 +30,15 @@ object ArtworkLoader {
 
     fun cached(song: Song, px: Int): Bitmap? = cache.get(key(song, px))
 
+    /** Agle gaano ka art pehle se load kar lo, taaki gaana badalte hi turant dikhe. */
+    fun prefetch(ctx: Context, song: Song, px: Int) {
+        load(ctx, song, px) { }
+    }
+
+    fun prefetchBlur(ctx: Context, song: Song) {
+        loadBlur(ctx, song) { }
+    }
+
     fun load(ctx: Context, song: Song, px: Int, cb: (Bitmap?) -> Unit) {
         val k = key(song, px)
         val hit = cache.get(k)
@@ -55,10 +64,12 @@ object ArtworkLoader {
             try {
                 val src = decode(app, song, 96)
                 if (src != null) {
-                    var b: Bitmap = src
-                    while (b.width > 16) {
-                        b = Bitmap.createScaledBitmap(b, maxOf(16, b.width / 2), maxOf(16, b.height / 2), true)
-                    }
+                    val tw = 40
+                    val th = maxOf(8, tw * src.height / maxOf(1, src.width))
+                    val b = Bitmap.createScaledBitmap(src, tw, th, true).copy(Bitmap.Config.ARGB_8888, true)
+                    BlurUtil.boxBlur(b, 2)
+                    BlurUtil.boxBlur(b, 2)
+                    BlurUtil.boxBlur(b, 2)
                     out = b
                 }
             } catch (e: Exception) { }

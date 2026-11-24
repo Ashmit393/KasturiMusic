@@ -66,6 +66,7 @@ private class RowHolder(ctx: Context) {
     val art = ImageView(ctx)
     val title = TextView(ctx)
     val sub = TextView(ctx)
+    val more = ImageView(ctx)
     val root = LinearLayout(ctx)
 
     init {
@@ -91,6 +92,10 @@ private class RowHolder(ctx: Context) {
         val lp = LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f)
         lp.leftMargin = dp(12)
         root.addView(col, lp)
+        more.setImageResource(R.drawable.ic_more)
+        more.setColorFilter(Theme.sub)
+        more.setPadding(dp(8), dp(8), dp(8), dp(8))
+        root.addView(more, LinearLayout.LayoutParams(dp(40), dp(40)))
     }
 }
 
@@ -445,15 +450,28 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         header.addView(backView)
         titleView = TextView(this)
         titleView.text = "Kasturi Music"
-        titleView.textSize = 28f
+        titleView.textSize = 34f
         titleView.setTypeface(null, Typeface.BOLD)
         titleView.setTextColor(Theme.text)
         titleView.isSingleLine = true
         titleView.ellipsize = TextUtils.TruncateAt.END
-        header.addView(titleView, LinearLayout.LayoutParams(0, wrap, 1f))
-        header.addView(actionText("Settings") {
+        val titleCol = LinearLayout(this)
+        titleCol.orientation = LinearLayout.VERTICAL
+        val brand = TextView(this)
+        brand.text = "KASTURI MUSIC"
+        brand.textSize = 11f
+        brand.letterSpacing = 0.18f
+        brand.setTypeface(null, Typeface.BOLD)
+        brand.setTextColor(Theme.sub)
+        titleCol.addView(brand)
+        titleCol.addView(titleView)
+        header.addView(titleCol, LinearLayout.LayoutParams(0, wrap, 1f))
+        val settingsBtn = actionText("Settings") {
             startActivity(Intent(this, SettingsActivity::class.java))
-        })
+        }
+        settingsBtn.background = Ui.roundRect(Theme.card, dp(16).toFloat())
+        settingsBtn.setPadding(dp(14), dp(8), dp(14), dp(8))
+        header.addView(settingsBtn)
         content.addView(header, LinearLayout.LayoutParams(match, wrap))
 
         // search + sort + rescan (+ cancel)
@@ -1076,7 +1094,7 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
         val rows = buildRows()
         rowAdapter.rows = rows
         rowAdapter.notifyDataSetChanged()
-        titleView.text = drillTitle ?: "Kasturi Music"
+        titleView.text = drillTitle ?: (if (tab == TAB_HOME) "Home" else if (searching) "Search" else "Library")
         backView.visibility = if (drillSongs != null || drillPlaylist != null) View.VISIBLE else View.GONE
         val homeMode = tab == TAB_HOME && drillSongs == null && drillPlaylist == null && query.trim().isEmpty()
         val msg: String? = when {
@@ -1482,6 +1500,13 @@ class MainActivity : Activity(), AudioPlayerManager.Listener {
             h.title.setTypeface(null, if (playing || r.isNew) Typeface.BOLD else Typeface.NORMAL)
             h.sub.text = r.sub
             Ui.bindArt(h.art, r.artSong, 160, 12, !flinging)
+            val sgm = r.song
+            if (sgm != null) {
+                h.more.visibility = View.VISIBLE
+                h.more.setOnClickListener { showSongMenu(sgm) }
+            } else {
+                h.more.visibility = View.GONE
+            }
             // naye aane wale rows halke se slide + fade hote hain
             v.animate().cancel()
             if (!flinging && position > lastAnimPos) {
