@@ -31,6 +31,17 @@ import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
 
+private fun fitButton(ctx: Context, res: Int, padDp: Int): ImageButton {
+    val b = ImageButton(ctx)
+    b.setImageResource(res)
+    b.setColorFilter(Color.WHITE)
+    b.background = null
+    b.scaleType = ImageView.ScaleType.FIT_CENTER
+    val p = Ui.dp(ctx, padDp)
+    b.setPadding(p, p, p, p)
+    return b
+}
+
 /**
  * Full-screen Now Playing, Apple Music jaisa: silky blurred artwork background, bada art, left-aligned
  * title + artist, patli progress bar, bade controls, volume slider, neeche icons (lyrics, shuffle, repeat, queue).
@@ -67,14 +78,13 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
     private val seek = SeekBar(ctx)
     private val volSeek = SeekBar(ctx)
     private val playBtn = ImageButton(ctx)
-    private val prevBtn = Ui.iconButton(ctx, R.drawable.ic_prev, Color.WHITE, 8)
-    private val nextBtn = Ui.iconButton(ctx, R.drawable.ic_next, Color.WHITE, 8)
-    private val heartBtn = Ui.iconButton(ctx, R.drawable.ic_heart_outline, Color.WHITE, 8)
-    private val moreBtn = Ui.iconButton(ctx, R.drawable.ic_more, Color.WHITE, 6)
-    private val lyricsBtn = Ui.iconButton(ctx, R.drawable.ic_lyrics, Color.WHITE, 11)
-    private val shuffleBtn = Ui.iconButton(ctx, R.drawable.ic_shuffle, Color.WHITE, 10)
-    private val repeatBtn = Ui.iconButton(ctx, R.drawable.ic_repeat, Color.WHITE, 10)
-    private val queueBtn = Ui.iconButton(ctx, R.drawable.ic_queue, Color.WHITE, 10)
+    private val prevBtn = fitButton(ctx, R.drawable.ic_rewind, 12)
+    private val nextBtn = fitButton(ctx, R.drawable.ic_forward, 12)
+    private val starBtn = fitButton(ctx, R.drawable.ic_star, 10)
+    private val moreBtn = fitButton(ctx, R.drawable.ic_more, 8)
+    private val lyricsBtn = fitButton(ctx, R.drawable.ic_lyrics, 12)
+    private val airBtn = fitButton(ctx, R.drawable.ic_airplay, 12)
+    private val queueBtn = fitButton(ctx, R.drawable.ic_queue, 12)
     private var dragging = false
     private var volDragging = false
     private var shownId = -1L
@@ -115,13 +125,13 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
     /** Apple jaisi patli rounded bar (thumb chhupa hua). */
     private fun styleBar(sb: SeekBar) {
         val bg = GradientDrawable()
-        bg.setColor(Color.argb(70, 255, 255, 255))
-        bg.cornerRadius = dp(3).toFloat()
-        bg.setSize(0, dp(6))
+        bg.setColor(Color.argb(80, 255, 255, 255))
+        bg.cornerRadius = dp(2).toFloat()
+        bg.setSize(0, dp(3))
         val fg = GradientDrawable()
         fg.setColor(Color.WHITE)
-        fg.cornerRadius = dp(3).toFloat()
-        fg.setSize(0, dp(6))
+        fg.cornerRadius = dp(2).toFloat()
+        fg.setSize(0, dp(3))
         val clip = ClipDrawable(fg, Gravity.START, ClipDrawable.HORIZONTAL)
         val ld = LayerDrawable(arrayOf(bg, clip))
         ld.setId(0, android.R.id.background)
@@ -129,7 +139,7 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         sb.progressDrawable = ld
         sb.thumb = null
         sb.splitTrack = false
-        sb.setPadding(0, dp(14), 0, dp(14))
+        sb.setPadding(0, dp(18), 0, dp(18))
     }
 
     private fun setActive(b: ImageButton, on: Boolean) {
@@ -145,7 +155,7 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         val scrim = View(context)
         val sg = GradientDrawable(
             GradientDrawable.Orientation.TOP_BOTTOM,
-            intArrayOf(Color.argb(70, 0, 0, 0), Color.argb(110, 0, 0, 0), Color.argb(175, 0, 0, 0))
+            intArrayOf(Color.argb(25, 0, 0, 0), Color.argb(55, 0, 0, 0), Color.argb(125, 0, 0, 0))
         )
         scrim.background = sg
         addView(scrim, FrameLayout.LayoutParams(match, match))
@@ -206,7 +216,7 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         texts.addView(titleView)
         texts.addView(artistView)
         info.addView(texts, LinearLayout.LayoutParams(0, wrap, 1f))
-        info.addView(heartBtn, LinearLayout.LayoutParams(dp(42), dp(42)))
+        info.addView(starBtn, LinearLayout.LayoutParams(dp(44), dp(44)))
         moreBtn.background = Ui.roundRect(Color.argb(55, 255, 255, 255), dp(18).toFloat())
         val mlp = LinearLayout.LayoutParams(dp(36), dp(36))
         mlp.leftMargin = dp(6)
@@ -227,7 +237,7 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
             }
             override fun onStartTrackingTouch(sb: SeekBar) {
                 dragging = true
-                sb.animate().scaleY(1.5f).setDuration(120).start()
+                sb.animate().scaleY(2.2f).setDuration(120).start()
             }
             override fun onStopTrackingTouch(sb: SeekBar) {
                 val dur = AudioPlayerManager.current?.durationMs ?: 0L
@@ -250,20 +260,22 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         times.addView(remaining, LinearLayout.LayoutParams(0, wrap, 1f))
         col.addView(times, LinearLayout.LayoutParams(match, wrap))
 
-        // controls: prev | play | next (bade, bina circle)
+        // controls: rewind | play | forward (bade glyphs, bina circle)
         playBtn.setImageResource(R.drawable.ic_play)
         playBtn.setColorFilter(Color.WHITE)
         playBtn.background = null
-        playBtn.scaleType = ImageView.ScaleType.CENTER_INSIDE
-        playBtn.setPadding(dp(8), dp(8), dp(8), dp(8))
+        playBtn.scaleType = ImageView.ScaleType.FIT_CENTER
+        playBtn.setPadding(dp(4), dp(4), dp(4), dp(4))
         val controls = LinearLayout(context)
         controls.orientation = LinearLayout.HORIZONTAL
         controls.gravity = Gravity.CENTER
-        controls.addView(prevBtn, LinearLayout.LayoutParams(0, dp(64), 1f))
-        controls.addView(playBtn, LinearLayout.LayoutParams(dp(84), dp(84)))
-        controls.addView(nextBtn, LinearLayout.LayoutParams(0, dp(64), 1f))
+        controls.addView(prevBtn, LinearLayout.LayoutParams(dp(64), dp(64)))
+        val pl = LinearLayout.LayoutParams(dp(84), dp(84))
+        pl.setMargins(dp(26), 0, dp(26), 0)
+        controls.addView(playBtn, pl)
+        controls.addView(nextBtn, LinearLayout.LayoutParams(dp(64), dp(64)))
         val clp = LinearLayout.LayoutParams(match, wrap)
-        clp.topMargin = dp(4)
+        clp.topMargin = dp(2)
         col.addView(controls, clp)
 
         // volume slider
@@ -287,36 +299,33 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         val volHigh = ImageView(context)
         volHigh.setImageResource(R.drawable.ic_volume_high)
         volHigh.setColorFilter(Color.argb(150, 255, 255, 255))
-        vol.addView(volLow, LinearLayout.LayoutParams(dp(20), dp(20)))
+        vol.addView(volLow, LinearLayout.LayoutParams(dp(16), dp(16)))
         val vsl = LinearLayout.LayoutParams(0, wrap, 1f)
         vsl.setMargins(dp(10), 0, dp(10), 0)
         vol.addView(volSeek, vsl)
-        vol.addView(volHigh, LinearLayout.LayoutParams(dp(20), dp(20)))
+        vol.addView(volHigh, LinearLayout.LayoutParams(dp(18), dp(18)))
         val vlp = LinearLayout.LayoutParams(match, wrap)
         vlp.topMargin = dp(2)
         col.addView(vol, vlp)
 
-        // neeche icons: lyrics | shuffle | repeat | queue
+        // neeche icons: lyrics (left) | output (beech) | queue (right)
         val bottom = LinearLayout(context)
         bottom.orientation = LinearLayout.HORIZONTAL
-        bottom.gravity = Gravity.CENTER
-        val sl = LinearLayout.LayoutParams(dp(54), dp(46))
-        sl.setMargins(dp(10), 0, dp(10), 0)
-        bottom.addView(lyricsBtn, LinearLayout.LayoutParams(sl))
-        bottom.addView(shuffleBtn, LinearLayout.LayoutParams(sl))
-        bottom.addView(repeatBtn, LinearLayout.LayoutParams(sl))
-        bottom.addView(queueBtn, LinearLayout.LayoutParams(sl))
+        bottom.gravity = Gravity.CENTER_VERTICAL
+        bottom.addView(lyricsBtn, LinearLayout.LayoutParams(dp(50), dp(50)))
+        bottom.addView(View(context), LinearLayout.LayoutParams(0, dp(1), 1f))
+        bottom.addView(airBtn, LinearLayout.LayoutParams(dp(50), dp(50)))
+        bottom.addView(View(context), LinearLayout.LayoutParams(0, dp(1), 1f))
+        bottom.addView(queueBtn, LinearLayout.LayoutParams(dp(50), dp(50)))
         val blp = LinearLayout.LayoutParams(match, wrap)
-        blp.topMargin = dp(6)
+        blp.topMargin = dp(4)
         col.addView(bottom, blp)
 
         // actions
         playBtn.setOnClickListener { AudioPlayerManager.toggle() }
         prevBtn.setOnClickListener { AudioPlayerManager.prev() }
         nextBtn.setOnClickListener { AudioPlayerManager.next() }
-        shuffleBtn.setOnClickListener { AudioPlayerManager.setShuffle(!AudioPlayerManager.shuffle) }
-        repeatBtn.setOnClickListener { AudioPlayerManager.cycleRepeat() }
-        heartBtn.setOnClickListener {
+        starBtn.setOnClickListener {
             val s = AudioPlayerManager.current
             if (s != null) {
                 MusicRepository.toggleFav(s.id)
@@ -325,14 +334,12 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         }
         moreBtn.setOnClickListener { showMoreMenu() }
         lyricsBtn.setOnClickListener { toggleLyrics() }
+        airBtn.setOnClickListener { openOutputs() }
         queueBtn.setOnClickListener { queueSheet.open() }
-        for (v in listOf<View>(playBtn, prevBtn, nextBtn, shuffleBtn, repeatBtn, heartBtn, moreBtn, lyricsBtn, queueBtn)) {
+        for (v in listOf<View>(playBtn, prevBtn, nextBtn, starBtn, moreBtn, lyricsBtn, airBtn, queueBtn)) {
             Ui.pressable(v)
         }
         setActive(lyricsBtn, false)
-        setActive(shuffleBtn, false)
-        setActive(repeatBtn, false)
-        setActive(queueBtn, false)
         addView(queueSheet, FrameLayout.LayoutParams(match, match))
     }
 
@@ -369,12 +376,8 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
         }
         if (lyricsMode && isOpen && id != lyricsSongId) loadLyrics()
         playBtn.setImageResource(if (AudioPlayerManager.isPlaying) R.drawable.ic_pause else R.drawable.ic_play)
-        setActive(shuffleBtn, AudioPlayerManager.shuffle)
-        val rep = AudioPlayerManager.repeat
-        repeatBtn.setImageResource(if (rep == 2) R.drawable.ic_repeat_one else R.drawable.ic_repeat)
-        setActive(repeatBtn, rep != 0)
         val fav = s != null && MusicRepository.isFav(s.id)
-        heartBtn.setImageResource(if (fav) R.drawable.ic_heart else R.drawable.ic_heart_outline)
+        starBtn.setColorFilter(if (fav) Color.WHITE else Color.argb(110, 255, 255, 255))
         updateProgress()
         updateVolume()
         queueSheet.refresh()
@@ -433,6 +436,15 @@ class NowPlayingView(ctx: Context, private val onClose: () -> Unit) : FrameLayou
     }
 
     private fun dialog() = AlertDialog.Builder(context, android.R.style.Theme_Material_Dialog_Alert)
+
+    /** AirPlay jaisa: speaker / headphone chunne ke liye phone ki Bluetooth settings kholta hai. */
+    private fun openOutputs() {
+        try {
+            val i = android.content.Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS)
+            i.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            context.startActivity(i)
+        } catch (e: Exception) { }
+    }
 
     private fun showMoreMenu() {
         val s = AudioPlayerManager.current ?: return

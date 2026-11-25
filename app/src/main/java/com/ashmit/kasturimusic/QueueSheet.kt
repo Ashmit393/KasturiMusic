@@ -17,6 +17,7 @@ import android.view.animation.AccelerateInterpolator
 import android.view.animation.DecelerateInterpolator
 import android.widget.BaseAdapter
 import android.widget.FrameLayout
+import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ListView
@@ -28,6 +29,8 @@ class QueueSheet(ctx: Context) : FrameLayout(ctx) {
     private val panel = LinearLayout(ctx)
     private val list = ListView(ctx)
     private val countView = TextView(ctx)
+    private val shuffleBtn = ImageButton(ctx)
+    private val repeatBtn = ImageButton(ctx)
     private val adapter = QAdapter()
     private var sheetOpen = false
     private var progress = 0f
@@ -78,6 +81,20 @@ class QueueSheet(ctx: Context) : FrameLayout(ctx) {
         countView.textSize = 13f
         countView.setTextColor(Ui.DIM)
         row.addView(countView)
+        for (b in listOf(shuffleBtn, repeatBtn)) {
+            b.background = null
+            b.scaleType = ImageView.ScaleType.FIT_CENTER
+            b.setPadding(dp(8), dp(8), dp(8), dp(8))
+        }
+        shuffleBtn.setImageResource(R.drawable.ic_shuffle)
+        repeatBtn.setImageResource(R.drawable.ic_repeat)
+        shuffleBtn.setOnClickListener { AudioPlayerManager.setShuffle(!AudioPlayerManager.shuffle) }
+        repeatBtn.setOnClickListener { AudioPlayerManager.cycleRepeat() }
+        val mlp1 = LinearLayout.LayoutParams(dp(40), dp(40))
+        mlp1.leftMargin = dp(8)
+        row.addView(shuffleBtn, mlp1)
+        row.addView(repeatBtn, LinearLayout.LayoutParams(dp(40), dp(40)))
+        updateModes()
         val done = TextView(context)
         done.text = "Done"
         done.textSize = 15f
@@ -174,7 +191,17 @@ class QueueSheet(ctx: Context) : FrameLayout(ctx) {
         return true
     }
 
+    private fun updateModes() {
+        val on = Color.WHITE
+        val off = Color.argb(110, 255, 255, 255)
+        shuffleBtn.setColorFilter(if (AudioPlayerManager.shuffle) on else off)
+        val rep = AudioPlayerManager.repeat
+        repeatBtn.setImageResource(if (rep == 2) R.drawable.ic_repeat_one else R.drawable.ic_repeat)
+        repeatBtn.setColorFilter(if (rep != 0) on else off)
+    }
+
     fun refresh() {
+        updateModes()
         if (sheetOpen) {
             countView.text = AudioPlayerManager.queue.size.toString() + " songs"
             adapter.notifyDataSetChanged()

@@ -105,7 +105,7 @@ object Ui {
 
     private val vivid: ColorMatrixColorFilter by lazy {
         val m = ColorMatrix()
-        m.setSaturation(1.5f)
+        m.setSaturation(1.8f)
         ColorMatrixColorFilter(m)
     }
 
